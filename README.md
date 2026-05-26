@@ -2,8 +2,6 @@
 
 Public skills for working with [cmux](https://github.com/manaflow-ai/cmux), a Ghostty-based macOS terminal with vertical tabs and notifications for AI coding agents.
 
-[![skills.sh](https://skills.sh/b/manaflow-ai/cmux-skills)](https://skills.sh/manaflow-ai/cmux-skills)
-
 Skills follow the [Agent Skills](https://agentskills.io/) format and work with any agent that supports the `.agents/skills/` or `.claude/skills/` conventions (Claude Code, Codex, Cursor, Amp, OpenCode, Goose, and more).
 
 ## Install
@@ -34,7 +32,6 @@ You can also clone the repo and symlink the skills you want into your agent's sk
 | [`cmux-browser`](skills/cmux-browser) | Drive cmux browser surfaces: snapshot refs, DOM actions, waits, screenshots, cookies, storage, tabs, downloads, console, errors. |
 | [`cmux-artifact`](skills/cmux-artifact) | Build durable HTML walkthrough artifacts for dogfood, verification, demos, and evidence pages, and open them in the current workspace. |
 | [`cmux-freestyle`](skills/cmux-freestyle) | Bring up cmux Cloud VMs on your own Freestyle account by minting a `FREESTYLE_SANDBOX_SNAPSHOT`. |
-| [`cmux-prune-mobile`](skills/cmux-prune-mobile) | Clean up old `dev.cmux.*` iOS installations on booted simulators and paired iPhones/iPads. |
 
 ## Layout
 
@@ -45,7 +42,6 @@ skills/
   cmux-cli/SKILL.md
   cmux-customize/SKILL.md
   cmux-freestyle/SKILL.md
-  cmux-prune-mobile/SKILL.md
   cmux-settings/SKILL.md
   cmux-workspace/SKILL.md
 ```

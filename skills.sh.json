@@ -21,11 +21,10 @@
       ]
     },
     {
-      "title": "Cloud and mobile",
-      "description": "Bring up Cloud VMs and clean up cmux iOS installs.",
+      "title": "Cloud",
+      "description": "Bring up cmux Cloud VMs on your own infrastructure.",
       "skills": [
-        "cmux-freestyle",
-        "cmux-prune-mobile"
+        "cmux-freestyle"
       ]
     }
   ]
