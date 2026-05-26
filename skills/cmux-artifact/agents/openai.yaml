@@ -1,0 +1,4 @@
+interface:
+  display_name: "cmux Artifact"
+  short_description: "Build durable HTML walkthrough artifacts and open useful evidence tabs in cmux."
+  default_prompt: "Create a durable HTML walkthrough artifact from real task evidence, copy supporting files into /cmux-assets, and open helpful tabs in the caller cmux workspace without stealing focus."

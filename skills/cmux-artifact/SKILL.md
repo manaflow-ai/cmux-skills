@@ -1,0 +1,106 @@
+---
+name: cmux-artifact
+description: "Create durable HTML walkthrough artifacts for cmux dogfood, verification, demos, evidence pages, artifact previews, and open helpful tabs or splits in the current cmux workspace."
+---
+
+# cmux Artifact
+
+Use this skill when the user asks for an HTML artifact, walkthrough, evidence page, demo page, artifact preview, or a workspace layout that helps them dogfood, verify, or understand a change. The goal is a durable, inspectable artifact plus non-disruptive cmux workspace tabs for the important evidence.
+
+## Prerequisites
+
+- Use the caller cmux workspace by default. Read the `cmux-workspace` skill when opening panes, tabs, browsers, logs, screenshots, videos, or generated documents.
+- Prefer real command output, logs, screenshots, traces, and timings. Do not invent evidence.
+- Keep final user-facing artifacts out of `/tmp`.
+
+## Artifact Location
+
+Put final artifacts under a branch-scoped durable tree:
+
+```bash
+BRANCH="$(git -C <worktree-or-repo> branch --show-current 2>/dev/null || echo task)"
+ASSET_ROOT="/cmux-assets/${BRANCH:-task}/<artifact-slug>"
+mkdir -p "$ASSET_ROOT"
+```
+
+If `/cmux-assets` cannot be created or written, use `cmux-assets/<branch>/<artifact-slug>` under the current repo checkout and state that fallback. `/tmp` is scratch only. Copy accepted logs, screenshots, frames, videos, and transcripts into the durable tree before opening or reporting them.
+
+## Workflow
+
+### Step 1: Gather Evidence
+
+Collect the smallest set of real artifacts that explain the task:
+
+- command transcript or terminal output
+- relevant logs
+- screenshots, frames, video, or browser snapshots
+- timing table with exact durations
+- code references or PR links when useful
+- cleanup state and remaining blockers
+
+Use concise names such as `run-transcript.md`, `server.log`, `failure.log`, `screenshot.png`, and `index.html`.
+
+### Step 2: Write `index.html`
+
+Create a standalone HTML document that works from the filesystem. Include:
+
+- a plain-language summary of what was tested or changed
+- a short timeline or step table
+- key timings
+- links to local copied logs/media using relative paths
+- observed failures and the direct next action
+- cleanup status if external resources were created
+
+Use simple, dense UI suitable for engineering review. Avoid marketing sections, giant hero layouts, decorative gradients, or hidden evidence.
+
+### Step 3: Open Helpful Tabs
+
+Open the final `index.html` as a browser surface navigated to its `file://` URL in the caller workspace's right helper pane without changing focus. Do not open HTML artifacts with `cmux open`, because that creates a file preview instead of exercising the artifact in the browser. Open raw evidence such as logs, Markdown transcripts, screenshots, or videos with `cmux open` after the browser artifact is handled.
+
+First check whether the same `index.html` artifact is already open in the target workspace or helper pane. If it is already open as a browser surface, navigate or reload that exact surface instead of opening a new one:
+
+```bash
+FILE_URL="$(node -e 'const {pathToFileURL}=require("url"); console.log(pathToFileURL(process.argv[1]).href)' "$ASSET_ROOT/index.html")"
+cmux browser --surface surface:<existing-artifact-browser> goto "$FILE_URL" --snapshot-after
+cmux browser --surface surface:<existing-artifact-browser> reload --snapshot-after
+```
+
+If the existing artifact is open as a file preview or another non-reloadable surface, close that exact stale artifact surface, then open one browser surface in the same helper pane. If there are duplicate surfaces for the same artifact, keep one browser surface if present, close stale duplicates, and navigate or reload the kept browser. Do not leave multiple `index.html` tabs for the same artifact because it makes the current version ambiguous.
+
+```bash
+FILE_URL="$(node -e 'const {pathToFileURL}=require("url"); console.log(pathToFileURL(process.argv[1]).href)' "$ASSET_ROOT/index.html")"
+cmux new-surface --workspace "${CMUX_WORKSPACE_ID:-}" \
+  --pane pane:<right-helper> \
+  --type browser \
+  --url "$FILE_URL" \
+  --focus false
+
+cmux open "$ASSET_ROOT/failure.log" \
+  --workspace "${CMUX_WORKSPACE_ID:-}" \
+  --pane pane:<right-helper> \
+  --no-focus
+```
+
+Resolve the helper pane exactly as described in the `cmux-workspace` skill. Reuse an existing right helper pane when obvious. If `cmux open` fails because the caller env is stale, retry once with `cmux identify --json` output, then report the exact paths if it still fails.
+
+### Step 4: Verify
+
+Before reporting completion:
+
+```bash
+test -f "$ASSET_ROOT/index.html"
+ls -la "$ASSET_ROOT"
+```
+
+If opened in cmux, run `cmux list-pane-surfaces --workspace "${CMUX_WORKSPACE_ID:-}" --json` or the closest equivalent to verify the tabs were created.
+
+Also verify there is only one visible surface for the artifact `index.html` in the target helper pane. If the command output still shows duplicates for the same artifact path or title, close stale duplicates before reporting completion.
+
+## Rules
+
+- Do not leave the final artifact only in `/tmp`.
+- Do not claim a run passed unless the linked transcript shows it.
+- Do not paste secrets into artifacts. Redact API keys, tokens, cookies, and Authorization headers before copying logs.
+- Do not steal focus. Use explicit workspace and pane refs plus `--no-focus` or `--focus false`.
+- Do not open a top-level repo or generic localhost page when a specific artifact path or deep link exists.
+- Keep the final chat answer short and include the durable artifact path plus the concrete next action.

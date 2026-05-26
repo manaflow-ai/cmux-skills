@@ -1,0 +1,32 @@
+{
+  "$schema": "https://skills.sh/schemas/skills.sh.schema.json",
+  "notGrouped": "bottom",
+  "groupings": [
+    {
+      "title": "cmux core",
+      "description": "Drive the cmux CLI, settings, and customization surfaces.",
+      "skills": [
+        "cmux-cli",
+        "cmux-settings",
+        "cmux-customize"
+      ]
+    },
+    {
+      "title": "Workspace automation",
+      "description": "Work inside cmux workspaces, browser surfaces, and durable artifact pages.",
+      "skills": [
+        "cmux-workspace",
+        "cmux-browser",
+        "cmux-artifact"
+      ]
+    },
+    {
+      "title": "Cloud and mobile",
+      "description": "Bring up Cloud VMs and clean up cmux iOS installs.",
+      "skills": [
+        "cmux-freestyle",
+        "cmux-prune-mobile"
+      ]
+    }
+  ]
+}

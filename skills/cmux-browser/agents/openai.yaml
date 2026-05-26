@@ -1,0 +1,4 @@
+interface:
+  display_name: "cmux Browser"
+  short_description: "Automate cmux webview surfaces within the current caller workspace."
+  default_prompt: "Use this skill for browser automation through cmux CLI. Identify the caller workspace and surface, open or target browser surfaces in that workspace, use snapshot refs, act, wait, verify, and re-snapshot without interfering with other workspaces."

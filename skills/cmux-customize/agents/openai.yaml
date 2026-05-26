@@ -1,0 +1,4 @@
+interface:
+  display_name: "cmux Customize"
+  short_description: "Customize user-level cmux config such as tab bar buttons, plus-button menus, custom actions, commands, and right sidebar wiring."
+  default_prompt: "Customize cmux using ~/.config/cmux/cmux.json or project-local .cmux/cmux.json, preserving unrelated config and verifying the changed key."
