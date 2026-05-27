@@ -1,0 +1,4 @@
+interface:
+  display_name: "cmux Ref"
+  short_description: "Interpret pasted cmux workspace, pane, surface, and window refs or UUIDs as explicit target context."
+  default_prompt: "Use this skill to parse pasted cmux_ref/cmux_id context such as workspace_ref, workspace_id, pane_ref, pane_id, surface_ref, or surface_id, then bind subsequent cmux actions to the exact target instead of relying on focus."
