@@ -32,6 +32,7 @@ You can also clone the repo and symlink the skills you want into your agent's sk
 | [`cmux-workspace`](skills/cmux-workspace) | Work inside the current cmux workspace: caller surface, panes, surfaces, tagged reloads, socket targeting, non-interfering automation. |
 | [`cmux-browser`](skills/cmux-browser) | Drive cmux browser surfaces: snapshot refs, DOM actions, waits, screenshots, cookies, storage, tabs, downloads, console, errors. |
 | [`cmux-artifact`](skills/cmux-artifact) | Build durable HTML walkthrough artifacts for dogfood, verification, demos, and evidence pages, and open them in the current workspace. |
+| [`cmux-artifacts`](skills/cmux-artifacts) | Alias for `cmux-artifact`, for agents or users that invoke the plural skill name. |
 | [`cmux-freestyle`](skills/cmux-freestyle) | Bring up cmux Cloud VMs on your own Freestyle account by minting a `FREESTYLE_SANDBOX_SNAPSHOT`. |
 
 ## Layout
@@ -39,6 +40,7 @@ You can also clone the repo and symlink the skills you want into your agent's sk
 ```
 skills/
   cmux-artifact/SKILL.md
+  cmux-artifacts/SKILL.md
   cmux-browser/SKILL.md
   cmux-cli/SKILL.md
   cmux-customize/SKILL.md
@@ -49,6 +51,15 @@ skills/
 ```
 
 Each skill is a self-contained directory with a `SKILL.md` plus any helper scripts, references, or agent configs it needs.
+
+Alias skill directories are generated from `skill-aliases.json`:
+
+```bash
+node scripts/sync-skill-aliases.mjs
+node scripts/sync-skill-aliases.mjs --check
+```
+
+Aliases are checked in as real skill directories so `npx skills add manaflow-ai/cmux-skills --all` and direct installs for Claude Code, Codex, Cursor, Amp, OpenCode, Goose, and other harnesses see the same command names. Do not hand-edit generated alias `SKILL.md` files.
 
 ## Contributing
 
