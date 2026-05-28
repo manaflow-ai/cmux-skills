@@ -1,0 +1,10 @@
+{
+  "aliases": [
+    {
+      "name": "cmux-artifacts",
+      "target": "cmux-artifact",
+      "title": "cmux Artifacts",
+      "description": "Alias for cmux-artifact. Use when the user asks for cmux artifacts, HTML artifacts, walkthrough artifacts, artifact previews, evidence pages, or demo pages."
+    }
+  ]
+}
