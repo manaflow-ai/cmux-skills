@@ -16,6 +16,7 @@
       "description": "Work inside cmux workspaces, browser surfaces, and durable artifact pages.",
       "skills": [
         "cmux-ref",
+        "cmux-groups",
         "cmux-workspace",
         "cmux-browser",
         "cmux-artifact"
