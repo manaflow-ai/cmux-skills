@@ -11,8 +11,8 @@ Create a durable HTML artifact from real evidence, copy supporting files into `/
 1. Gather real logs, transcripts, screenshots, videos, timings, or code references.
 2. Copy final evidence out of `/tmp` into a branch-scoped durable asset directory.
 3. Write `index.html` with summary, timing table, links to raw evidence, cleanup state, and next actions.
-4. Open `index.html` plus the key raw evidence through `cmux open --no-focus` in the caller workspace helper pane.
-5. Verify the file exists and report the durable path.
+4. Open `index.html` as a browser surface (its `file://` URL), not `cmux open` (that makes a file preview, not a live browser). Put it in its own pane side by side with the work: reuse a right helper pane, or in a single-pane workspace create a right split (`cmux new-pane --direction right --type browser --url <file-url> --focus false`). Never stack it as a background tab behind the active terminal. Open raw evidence (logs, screenshots, video) with `cmux open --no-focus` after the browser artifact is placed.
+5. Verify the file exists, the artifact is visible in its own pane (not a hidden background tab), and report the durable path.
 
 ## Output format
 
