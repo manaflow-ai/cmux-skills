@@ -10,7 +10,7 @@ Use this skill when the task is to create or modify a cmux left-sidebar custom v
 ## Orientation
 
 - The original work is PR `https://github.com/manaflow-ai/cmux/pull/5254` by Aziz Albahar.
-- The feature is opt-in behind `customSidebars.beta.enabled`.
+- The feature is opt-in behind the UserDefaults-backed key `customSidebars.beta.enabled`.
 - Custom sidebars live under `~/.config/cmux/sidebars/` and appear in the left sidebar picker when the beta is enabled.
 - Start from the cmux app checkout docs: `repo/docs/custom-sidebars.md`.
 
@@ -63,6 +63,13 @@ For config-only sidebars:
 ls ~/.config/cmux/sidebars
 ```
 
-Then ensure `customSidebars.beta.enabled` is on and ask the user to select the named sidebar from the left sidebar picker. If cmux CLI/settings helpers are available, use them to enable the beta yourself.
+Then ensure `customSidebars.beta.enabled` is on and ask the user to select the named sidebar from the left sidebar picker. This is not a `cmux.json` setting in current cmux builds; it is stored in the app's `UserDefaults.standard` domain. For temporary local dogfood only, it is acceptable to set the running app domain directly:
+
+```bash
+defaults write <bundle-id> customSidebars.beta.enabled -bool true
+defaults write <bundle-id> cmuxExtensionSidebar.providerId "cmux.sidebar.custom.<name>"
+```
+
+Use the actual running bundle id, often `com.cmuxterm.app.nightly` for nightly or `com.manaflow.cmux.dev` for the default dev app. State that this is temporary dogfood setup, not a product default.
 
 For interpreter or app changes, prefer focused package tests for `CmuxSwiftRender` plus the smallest real dogfood reload. Do not run local cmux `xcodebuild ... test`; use the project's remote or CI test guidance.
