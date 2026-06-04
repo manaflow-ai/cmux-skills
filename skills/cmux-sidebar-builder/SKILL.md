@@ -1,9 +1,9 @@
 ---
-name: cmux-sidebar-vibe
-description: "Build, inspect, or revise vibe-coded cmux left-sidebar custom views using the runtime SwiftUI-style interpreter. Use for custom sidebars, left sidebar vibe coding, interpreted Swift sidebars, ~/.config/cmux/sidebars/*.swift, cmux docs sidebars, or Aziz's Swift interpreter work."
+name: cmux-sidebar-builder
+description: "Build, inspect, or revise cmux left-sidebar custom views using the runtime SwiftUI-style interpreter. Use for custom sidebars, left sidebar building, sidebar vibe coding, interpreted Swift sidebars, ~/.config/cmux/sidebars/*.swift, cmux docs sidebars, or Aziz's Swift interpreter work."
 ---
 
-# cmux sidebar vibe coding
+# cmux sidebar builder
 
 Use this skill when the task is to create or modify a cmux left-sidebar custom view. These are user/agent-authored `.swift` files in `~/.config/cmux/sidebars/` rendered by cmux's runtime SwiftUI-style interpreter, not compiled app code.
 

@@ -30,7 +30,7 @@ You can also clone the repo and symlink the skills you want into your agent's sk
 | [`cmux-customize`](skills/cmux-customize) | Customize tab bar buttons, plus-button menus, custom actions, commands, and right sidebar entries through `cmux.json`. |
 | [`cmux-ref`](skills/cmux-ref) | Interpret pasted cmux workspace, pane, surface, and window refs or UUIDs as explicit target context. |
 | [`cmux-groups`](skills/cmux-groups) | Manage collapsible sidebar workspace groups, anchor workspaces, group placement, and per-cwd group config. |
-| [`cmux-sidebar-vibe`](skills/cmux-sidebar-vibe) | Build left-sidebar custom views with cmux's runtime SwiftUI-style interpreter. |
+| [`cmux-sidebar-builder`](skills/cmux-sidebar-builder) | Build left-sidebar custom views with cmux's runtime SwiftUI-style interpreter. |
 | [`cmux-workspace`](skills/cmux-workspace) | Work inside the current cmux workspace: caller surface, panes, surfaces, tagged reloads, socket targeting, non-interfering automation. |
 | [`cmux-browser`](skills/cmux-browser) | Drive cmux browser surfaces: snapshot refs, DOM actions, waits, screenshots, cookies, storage, tabs, downloads, console, errors. |
 | [`cmux-artifact`](skills/cmux-artifact) | Build durable HTML walkthrough artifacts for dogfood, verification, demos, and evidence pages, and open them in the current workspace. |
@@ -46,7 +46,7 @@ skills/
   cmux-customize/SKILL.md
   cmux-freestyle/SKILL.md
   cmux-groups/SKILL.md
-  cmux-sidebar-vibe/SKILL.md
+  cmux-sidebar-builder/SKILL.md
   cmux-ref/SKILL.md
   cmux-settings/SKILL.md
   cmux-workspace/SKILL.md
