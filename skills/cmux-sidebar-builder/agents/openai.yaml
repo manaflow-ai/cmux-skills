@@ -1,0 +1,4 @@
+interface:
+  display_name: "cmux Sidebar Builder"
+  short_description: "Build left-sidebar custom views with cmux's runtime SwiftUI-style interpreter."
+  default_prompt: "Use this skill to create, inspect, or revise cmux left-sidebar custom sidebars in ~/.config/cmux/sidebars using the runtime Swift interpreter and current cmux docs/source entrypoints."
