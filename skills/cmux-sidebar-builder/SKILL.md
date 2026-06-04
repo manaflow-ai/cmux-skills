@@ -61,15 +61,25 @@ For config-only sidebars:
 
 ```bash
 ls ~/.config/cmux/sidebars
+cmux sidebar validate <name>
 ```
 
-Then ensure `customSidebars.beta.enabled` is on and ask the user to select the named sidebar from the left sidebar picker. This is not a `cmux.json` setting in current cmux builds; it is stored in the app's `UserDefaults.standard` domain. For temporary local dogfood only, it is acceptable to set the running app domain directly:
+Do not change the user's selected/default sidebar as part of normal authoring. The original workspaces sidebar should remain the default unless the user explicitly asks to activate the custom sidebar.
+
+If the running cmux build supports it, reload valid custom sidebars without selecting one:
 
 ```bash
-defaults write <bundle-id> customSidebars.beta.enabled -bool true
-defaults write <bundle-id> cmuxExtensionSidebar.providerId "cmux.sidebar.custom.<name>"
+cmux sidebar reload --all
 ```
 
-Use the actual running bundle id, often `com.cmuxterm.app.nightly` for nightly or `com.manaflow.cmux.dev` for the default dev app. State that this is temporary dogfood setup, not a product default.
+Editing a sidebar file alone should not be treated as a reload signal. Use the CLI reload command after writes are complete so half-written files do not replace a mounted sidebar.
+
+Only when the user explicitly asks to activate the custom sidebar, validate and select it:
+
+```bash
+cmux sidebar select <name>
+```
+
+For older cmux builds without `cmux sidebar`, ask the user to pick the named sidebar from the left sidebar picker. Avoid `defaults write` for sidebar selection unless the user explicitly requests temporary local dogfood setup, and state that it is not a product default.
 
 For interpreter or app changes, prefer focused package tests for `CmuxSwiftRender` plus the smallest real dogfood reload. Do not run local cmux `xcodebuild ... test`; use the project's remote or CI test guidance.
