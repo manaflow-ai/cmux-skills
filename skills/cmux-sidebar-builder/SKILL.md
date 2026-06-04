@@ -72,6 +72,8 @@ If the running cmux build supports it, reload valid custom sidebars without sele
 cmux sidebar reload --all
 ```
 
+Editing a sidebar file alone should not be treated as a reload signal. Use the CLI reload command after writes are complete so half-written files do not replace a mounted sidebar.
+
 Only when the user explicitly asks to activate the custom sidebar, validate and select it:
 
 ```bash
