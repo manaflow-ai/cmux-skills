@@ -1,16 +1,11 @@
----
-name: cmux-customize
-description: "Customize a user's cmux configuration, including tab bar buttons, plus-button click and right-click context menu behavior, custom actions, commands, menus, right sidebar entries, and trigger phrases like cmux-customize, customize cmux, remove tab bar button, or add cmux action."
----
+# cmux Customization (cmux-config reference)
 
-# cmux-customize
-
-Use this skill for personal cmux configuration changes stored outside the app source tree, especially `~/.config/cmux/cmux.json` and project-local `.cmux/cmux.json` files. It covers action registry entries, surface tab bar buttons, plus-button click and right-click menu behavior, custom workspace commands, right sidebar wiring, and related config cleanup.
+Personal cmux configuration changes stored outside the app source tree, especially `~/.config/cmux/cmux.json` and project-local `.cmux/cmux.json` files. Covers action registry entries, surface tab bar buttons, plus-button click and right-click menu behavior, custom workspace commands, right sidebar wiring, and related config cleanup.
 
 ## Prerequisites
 
-- Use the `cmux-settings` skill's `cmux-settings` helper script for global `~/.config/cmux/cmux.json` reads and writes.
-- Read the `cmux-settings` skill first when the task touches standard settings under `app`, `terminal`, `notifications`, `sidebar`, `sidebarAppearance`, `workspaceColors`, `automation`, `browser`, or `shortcuts`.
+- Use this skill's `cmux-settings` helper script (`scripts/cmux-settings`) for global `~/.config/cmux/cmux.json` reads and writes.
+- For standard typed settings under `app`, `terminal`, `notifications`, `sidebar`, `sidebarAppearance`, `workspaceColors`, `automation`, `browser`, or `shortcuts`, see the Settings section of `cmux-config` SKILL.md and `references/all-keys.md`.
 
 ## Reference
 

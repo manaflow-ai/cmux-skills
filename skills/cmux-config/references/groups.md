@@ -1,9 +1,4 @@
----
-name: cmux-groups
-description: "Manage cmux sidebar workspace groups via the CLI and ~/.config/cmux/cmux.json. Trigger on workspace group, group sidebar, tab group, anchor workspace, cmux workspace group, cmux workspace-group, or any cmux.json workspaceGroups key."
----
-
-# cmux workspace groups
+# cmux workspace groups (cmux-config reference)
 
 Workspace groups are collapsible named sections in the cmux sidebar. Each group is owned by an anchor workspace. The group header is the anchor's sidebar representation, so there is no separate row for the anchor. Closing the anchor dissolves the group while preserving the other members as ungrouped workspaces.
 

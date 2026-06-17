@@ -254,5 +254,5 @@ tail -f "$(cat /tmp/cmux-last-debug-log-path 2>/dev/null || echo /tmp/cmux-debug
 - `skills/cmux/SKILL.md` covers core topology and routing.
 - the `cmux-workspace` skill covers current-workspace targeting and helper panes.
 - the `cmux-browser` skill covers browser surface automation.
-- the `cmux-settings` skill covers safe settings edits.
+- the `cmux-config` skill covers safe settings edits.
 - the `cmux-markdown` skill covers markdown viewer panels.
