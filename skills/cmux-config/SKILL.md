@@ -57,10 +57,15 @@ Schema: `https://raw.githubusercontent.com/manaflow-ai/cmux/main/web/data/cmux.s
    `cmux-settings list-supported | rg -i '<keywords>'`.
 2. Make the smallest edit (settings/customize via the helper; groups via the
    `cmux workspace group` CLI in [references/groups.md](references/groups.md)).
-3. Verify settings/customize edits by reading back (`cmux-settings get <path>`) and
-   `cmux-settings validate`. Verify group changes with `cmux workspace group list` instead:
-   the settings validator only knows settings/structural keys and does not recognize
-   `workspaceGroups`, so it is not the check for group edits.
+3. Verify by surface:
+   - **Typed settings:** read back (`cmux-settings get <path>`) and `cmux-settings validate`.
+   - **Customization** (`actions`, `ui.*`, `commands`, `vault`, `rightSidebar`): read back the
+     exact key (`cmux-settings get <path>`) and confirm the file still parses
+     (`cmux-settings dump --no-comments`). Do NOT rely on `validate` here: it skips structural
+     sections, so a typo like `ui.surfaceTabbar.buttons` passes validation yet cmux ignores it.
+     Check the key against [references/customize.md](references/customize.md).
+   - **Groups:** `cmux workspace group list` (the settings validator does not recognize
+     `workspaceGroups`).
 4. Tell the user it auto-reloaded on save. No app restart. Revert with
    `cmux-settings unset <key>`.
 
