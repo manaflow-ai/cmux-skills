@@ -13,7 +13,7 @@ The easiest path is the [`skills`](https://skills.sh) CLI:
 npx skills add manaflow-ai/cmux-skills -g --all
 
 # Or pick specific ones, for specific agents
-npx skills add manaflow-ai/cmux-skills --skill cmux-cli cmux-settings --agent claude-code
+npx skills add manaflow-ai/cmux-skills --skill cmux-cli cmux-config --agent claude-code
 
 # List what's in the repo without installing
 npx skills add manaflow-ai/cmux-skills --list
@@ -26,10 +26,8 @@ You can also clone the repo and symlink the skills you want into your agent's sk
 | Skill | What it does |
 |---|---|
 | [`cmux-cli`](skills/cmux-cli) | Reference for the `cmux` CLI: socket commands, workspaces, panes, surfaces, browser, hooks, feed, settings, automation. |
-| [`cmux-settings`](skills/cmux-settings) | Read and write `~/.config/cmux/cmux.json` safely. Ships a helper script that strips JSONC comments, writes atomically, and validates keys. |
-| [`cmux-customize`](skills/cmux-customize) | Customize tab bar buttons, plus-button menus, custom actions, commands, and right sidebar entries through `cmux.json`. |
+| [`cmux-config`](skills/cmux-config) | Configure `~/.config/cmux/cmux.json`: typed settings (helper script that strips JSONC comments, writes atomically, validates keys), customization (tab bar buttons, plus-button menus, custom actions/commands, right sidebar), and sidebar workspace groups. |
 | [`cmux-ref`](skills/cmux-ref) | Interpret pasted cmux workspace, pane, surface, and window refs or UUIDs as explicit target context. |
-| [`cmux-groups`](skills/cmux-groups) | Manage collapsible sidebar workspace groups, anchor workspaces, group placement, and per-cwd group config. |
 | [`cmux-sidebar-builder`](skills/cmux-sidebar-builder) | Build left-sidebar custom views with cmux's runtime SwiftUI-style interpreter. |
 | [`cmux-workspace`](skills/cmux-workspace) | Work inside the current cmux workspace: caller surface, panes, surfaces, tagged reloads, socket targeting, non-interfering automation. |
 | [`cmux-browser`](skills/cmux-browser) | Drive cmux browser surfaces: snapshot refs, DOM actions, waits, screenshots, cookies, storage, tabs, downloads, console, errors. |
@@ -43,12 +41,12 @@ skills/
   cmux-artifact/SKILL.md
   cmux-browser/SKILL.md
   cmux-cli/SKILL.md
-  cmux-customize/SKILL.md
+  cmux-config/SKILL.md
+  cmux-config/references/{all-keys,shortcut-actions,customize,groups}.md
+  cmux-config/scripts/cmux-settings
   cmux-freestyle/SKILL.md
-  cmux-groups/SKILL.md
   cmux-sidebar-builder/SKILL.md
   cmux-ref/SKILL.md
-  cmux-settings/SKILL.md
   cmux-workspace/SKILL.md
 ```
 

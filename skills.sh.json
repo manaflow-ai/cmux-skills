@@ -7,8 +7,7 @@
       "description": "Drive the cmux CLI, settings, and customization surfaces.",
       "skills": [
         "cmux-cli",
-        "cmux-settings",
-        "cmux-customize"
+        "cmux-config"
       ]
     },
     {
@@ -16,7 +15,6 @@
       "description": "Work inside cmux workspaces, browser surfaces, and durable artifact pages.",
       "skills": [
         "cmux-ref",
-        "cmux-groups",
         "cmux-sidebar-builder",
         "cmux-workspace",
         "cmux-browser",
