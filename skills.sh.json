@@ -18,7 +18,8 @@
         "cmux-sidebar-builder",
         "cmux-workspace",
         "cmux-browser",
-        "cmux-artifact"
+        "cmux-artifact",
+        "cmux-artifacts"
       ]
     },
     {
