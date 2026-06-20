@@ -1,17 +1,17 @@
 ---
 name: cmux-sidebar-builder
-description: "Build, inspect, or revise cmux left-sidebar custom views using the runtime SwiftUI-style interpreter. Use for custom sidebars, left sidebar building, sidebar vibe coding, interpreted Swift sidebars, ~/.config/cmux/sidebars/*.swift, cmux docs sidebars, or Aziz's Swift interpreter work."
+description: "Build, inspect, or revise cmux custom sidebar views using the runtime SwiftUI-style interpreter. Use for sidebar vibe coding, custom sidebars in Bonsplit panes, left sidebar picker previews, interpreted Swift sidebars, ~/.config/cmux/sidebars/*.swift, cmux docs sidebars, or Aziz's Swift interpreter work."
 ---
 
 # cmux sidebar builder
 
-Use this skill when the task is to create or modify a cmux left-sidebar custom view. These are user/agent-authored `.swift` files in `~/.config/cmux/sidebars/` rendered by cmux's runtime SwiftUI-style interpreter, not compiled app code.
+Use this skill when the task is to create or modify a cmux custom sidebar view. These are user/agent-authored `.swift` files in `~/.config/cmux/sidebars/` rendered by cmux's runtime SwiftUI-style interpreter, not compiled app code. The primary dogfood surface is a normal Bonsplit pane tab opened with `cmux sidebar open <name>`; the left sidebar picker remains useful for previews.
 
 ## Orientation
 
 - The original work is PR `https://github.com/manaflow-ai/cmux/pull/5254` by Aziz Albahar.
 - The feature is opt-in behind the UserDefaults-backed key `customSidebars.beta.enabled`.
-- Custom sidebars live under `~/.config/cmux/sidebars/` and appear in the left sidebar picker when the beta is enabled.
+- Custom sidebars live under `~/.config/cmux/sidebars/`. They can be opened as normal Bonsplit pane tabs with `cmux sidebar open <name>` and appear in the left sidebar picker when the beta is enabled.
 - Start from the cmux app checkout docs: `repo/docs/custom-sidebars.md`.
 
 Important cmux source entrypoints:
@@ -21,6 +21,8 @@ Important cmux source entrypoints:
 - `repo/Packages/CmuxSwiftRender/Sources/CmuxSwiftRender/RenderNode.swift`
 - `repo/Packages/CmuxSwiftRenderUI/Sources/CmuxSwiftRenderUI/Sidebar/CustomSidebarView.swift`
 - `repo/Sources/ContentView.swift`, around `customSidebarsDirectory`, `customSidebarDataContext`, and `CustomSidebarView(...)`.
+- `repo/Sources/Panels/CustomSidebarPanel.swift` for the Bonsplit pane host.
+- `repo/Sources/Workspace+CustomSidebarPane.swift` and `repo/Sources/TerminalController+CustomSidebarCommands.swift` for the `cmux sidebar open <name>` path.
 
 Follow-up implementation branches to inspect when needed:
 
@@ -49,7 +51,9 @@ Follow-up implementation branches to inspect when needed:
 
 ## Authoring rules
 
-- This is the left sidebar. Do not use right-sidebar configuration or ExtensionKit unless the user explicitly asks for that surface.
+- Do not use `cmux right-sidebar set <name>` or right-sidebar configuration for custom sidebars. Custom sidebars should render in a Bonsplit pane via `cmux sidebar open <name>` when the user wants to see the sidebar next to their work.
+- The left sidebar picker is a preview/selection surface. Do not treat the right sidebar as a custom-sidebar host.
+- Do not use ExtensionKit unless the user explicitly asks for that surface.
 - Keep custom sidebar files small and inspectable. If a design gets complicated, split behavior into simple helper functions only if the interpreter supports them.
 - Make every visible action explicit through supported `Button` action payloads. Do not invent action ids without checking `repo/Packages/CmuxSwiftRender/Sources/CmuxSwiftRender/ActionCommand.swift` and app dispatch wiring.
 - Prefer real workspace, surface, notification, port, git, and progress fields from the cmux context. Avoid placeholder dashboards unless the task is only a mockup.
@@ -62,9 +66,20 @@ For config-only sidebars:
 ```bash
 ls ~/.config/cmux/sidebars
 cmux sidebar validate <name>
+cmux sidebar open <name>
 ```
 
 Do not change the user's selected/default sidebar as part of normal authoring. The original workspaces sidebar should remain the default unless the user explicitly asks to activate the custom sidebar.
+
+After opening, verify the custom sidebar is a pane surface, not the right sidebar:
+
+```bash
+cmux identify --json --id-format both
+cmux tree --workspace <workspace-ref> --json --id-format both
+cmux right-sidebar set <name>   # should fail on current builds; do not use this for setup
+```
+
+For tagged dogfood, use the tag-bound dev CLI and socket, for example `~/.local/bin/cmux-dev --socket /tmp/cmux-debug-<tag>.sock sidebar open <name> --json`, then verify the focused surface reports `surface_type: customSidebar`.
 
 If the running cmux build supports it, reload valid custom sidebars without selecting one:
 
