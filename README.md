@@ -9,7 +9,10 @@ Skills follow the [Agent Skills](https://agentskills.io/) format and work with a
 The easiest path is the [`skills`](https://skills.sh) CLI:
 
 ```bash
-# Add all cmux skills globally (available to every agent on this machine)
+# Add only the cmux entry point (it falls back to live CLI help)
+npx skills add manaflow-ai/cmux-skills -g --skill cmux
+
+# Recommended: install the router and focused skills globally, then invoke only $cmux
 npx skills add manaflow-ai/cmux-skills -g --all
 
 # Or pick specific ones, for specific agents
@@ -25,6 +28,7 @@ You can also clone the repo and symlink the skills you want into your agent's sk
 
 | Skill | What it does |
 |---|---|
+| [`cmux`](skills/cmux) | Main entry point for `$cmux`. Explains cmux and routes workspace, browser, config, CLI, sidebar, artifact, and Cloud tasks to the right focused skill. |
 | [`cmux-cli`](skills/cmux-cli) | Reference for the `cmux` CLI: socket commands, workspaces, panes, surfaces, browser, hooks, feed, settings, automation. |
 | [`cmux-config`](skills/cmux-config) | Configure `~/.config/cmux/cmux.json`: typed settings (helper script that strips JSONC comments, writes atomically, validates keys), customization (tab bar buttons, plus-button menus, custom actions/commands, right sidebar), and sidebar workspace groups. |
 | [`cmux-ref`](skills/cmux-ref) | Interpret pasted cmux workspace, pane, surface, and window refs or UUIDs as explicit target context. |
@@ -38,6 +42,8 @@ You can also clone the repo and symlink the skills you want into your agent's sk
 
 ```
 skills/
+  cmux/SKILL.md
+  cmux/references/overview.md
   cmux-artifact/SKILL.md
   cmux-browser/SKILL.md
   cmux-cli/SKILL.md

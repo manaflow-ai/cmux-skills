@@ -1,0 +1,4 @@
+interface:
+  display_name: "cmux"
+  short_description: "Route any cmux task to the right workflow"
+  default_prompt: "Use $cmux to help with my cmux workspace, configuration, browser, or automation task."
