@@ -23,8 +23,9 @@
     },
     {
       "title": "Cloud",
-      "description": "Bring up cmux Cloud VMs on your own infrastructure.",
+      "description": "Use cmux Cloud VMs from the CLI, or bring them up on your own infrastructure.",
       "skills": [
+        "cmux-cloud",
         "cmux-freestyle"
       ]
     }

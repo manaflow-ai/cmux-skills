@@ -32,6 +32,7 @@ You can also clone the repo and symlink the skills you want into your agent's sk
 | [`cmux-workspace`](skills/cmux-workspace) | Work inside the current cmux workspace: caller surface, panes, surfaces, tagged reloads, socket targeting, non-interfering automation. |
 | [`cmux-browser`](skills/cmux-browser) | Drive cmux browser surfaces: snapshot refs, DOM actions, waits, screenshots, cookies, storage, tabs, downloads, console, errors. |
 | [`cmux-artifact`](skills/cmux-artifact) | Build durable HTML walkthrough artifacts for dogfood, verification, demos, and evidence pages, and open them in the current workspace. |
+| [`cmux-cloud`](skills/cmux-cloud) | Use cmux Cloud machines through the `cmux vm` CLI: create, attach, Base, exec/run, cloud coding agents, file push/pull, ports and desktop, snapshot/fork/restore, and in-VM notifications. |
 | [`cmux-freestyle`](skills/cmux-freestyle) | Bring up cmux Cloud VMs on your own Freestyle account by minting a `FREESTYLE_SANDBOX_SNAPSHOT`. |
 
 ## Layout
@@ -44,6 +45,8 @@ skills/
   cmux-config/SKILL.md
   cmux-config/references/{all-keys,shortcut-actions,customize,groups}.md
   cmux-config/scripts/cmux-settings
+  cmux-cloud/SKILL.md
+  cmux-cloud/references/commands.md
   cmux-freestyle/SKILL.md
   cmux-sidebar-builder/SKILL.md
   cmux-ref/SKILL.md
