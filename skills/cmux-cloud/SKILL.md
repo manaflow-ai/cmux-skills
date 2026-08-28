@@ -10,16 +10,16 @@ Drive cmux Cloud machines (user-owned persistent Linux VMs) through the `cmux` C
 ## Mental model
 
 - A **machine** is a persistent cloud VM owned by the signed-in cmux user. Its generated name (`brave-otter`) is its address everywhere; `cmux vm rename` sets a display label only. The cloud backend picks the provider; the machine outlives your panes, your Mac being closed, and reconnects.
-- Every machine runs **cmuxd-remote**, a daemon that owns terminal sessions and scrollback. Clients (Mac panes, iOS, `vm exec`) attach to it over short-lived WebSocket leases; SSH is a degraded fallback some providers cannot mint at all.
+- Every machine runs a **cmux session daemon** (cmux-tui on current images, cmuxd-remote on older ones) that owns terminal sessions and scrollback. Clients (Mac panes, iOS) attach through short-lived leases minted by the backend; the transport depends on what the provider and image support. SSH is a fallback some providers and images cannot mint at all, and its absence is not an error.
 - New machines boot a **desktop image** (xfce + noVNC) plus a shell, with a persistent per-machine home. `--base` gives a shell-only machine.
 - **Base** is a separate single per-user persistent slot, pinned to the top of the sidebar. `vm new` mints fresh machines; `vm base` always reopens the same one.
-- Terminals on a machine live in its **cmux-tui session** (workspaces `ws_…`, terminals `term_…`). They keep running detached; `cmux vm tree` catalogs every surface (local and cloud) and every line is an address `cmux vm open` accepts, e.g. `brave-otter/main/term_2f9c…`, `brave-otter:desktop`, `brave-otter:port/3000`.
+- Terminals on a machine live in its **cmux-tui session** (workspaces `ws_…`, terminals `term_…`). They keep running detached; `cmux vm tree` catalogs every surface (local and cloud) and every line is an address `cmux vm open` (machine targets) or `cmux surface open` (any entry, including This Mac) accepts, e.g. `brave-otter/main/term_2f9c…`, `brave-otter:desktop`, `brave-otter:port/3000`.
 - **Pool machines** (labeled `agent-pool` in `vm ls`) are provisioned by the `vm run`/`vm agent` router and reused for routed work. The router never drafts machines a person made by hand.
 - Plans cap active machine count and memory. `cmux vm ls` prints the meter (`N of M machines on the <plan> plan`) and, on free plans, when free cloud access expires.
 
 ## Prerequisites
 
-Host-side commands go through the running cmux macOS app's socket: the app must be running and signed in (machines belong to that account/team). `cmux --version`, `cmux ping`, then `cmux vm ls` is the fastest health check. Everything accepts `--json` for scripting. Creating machines costs money and counts against the plan; prefer reuse over creation.
+Host-side commands go through the running cmux macOS app's socket: the app must be running and signed in (machines belong to that account/team). `cmux --version`, `cmux ping`, then `cmux vm ls` is the fastest health check. Commands that document `--json` support it for scripting. Creating machines costs money and counts against the plan; prefer reuse over creation.
 
 ## Workflows
 
@@ -47,7 +47,7 @@ Agents (`claude`, `codex`, `opencode`, `pi` are preinstalled) start as detached 
 
 ```bash
 cmux vm new --detach                # fresh persistent machine; prints id + next commands
-cmux vm shell <id>                  # terminal workspace on it (WebSocket attach)
+cmux vm shell <id>                  # terminal workspace on it (managed attach)
 cmux vm desktop <id>                # its noVNC screen as a browser pane
 cmux vm tui <id>                    # the machine's full cmux-tui client in a pane
 cmux vm base                        # the persistent Base slot
@@ -94,9 +94,9 @@ cmux notify --title "Build done" --subtitle "myrepo" --body "Tests green, artifa
 - MUST NOT pass a name to `cmux vm new` — it takes no positional arguments (rejected to prevent accidental paid provisioning). Create, then `cmux vm rename`.
 - Prefer `vm run`/`vm agent` routing over creating machines; creation counts against the plan limit and bills the user. Check `cmux vm ls` before `vm new`.
 - Do not loop on `vm status` waiting for readiness; use `cmux vm wait <id> [--wake]`.
-- Do not parse the human table output; every command takes `--json`.
-- Do not use `cmux vm ssh` unless the WebSocket path failed; say why in the handoff when you do.
+- Do not use `cmux vm ssh` unless the managed attach path failed; some providers and images cannot mint SSH, so treat "SSH unavailable" as normal, not as an error to fix. Say why in the handoff when you fall back.
 - Do not call the internal attach helpers (`vm ssh-attach`, `vm-pty-attach`, `vm-ssh-attach`, `vm-pty-connect`, `vm-tui-connect`, `vm-tui-approve`).
 - `vm exec` quoting is faithful per argv element; do not pre-quote. Wrap shell constructs as `-- sh -c '<script>'`.
 - Provider choice belongs to the backend. Use `--provider` only for a rollback or experiment the user asked for.
+- Use `--json` only on commands whose `--help` documents it; interactive verbs (`shell`, `tui`, `desktop`) have none. Do not parse the human table output either way.
 - Plan limits, sizes, and providers change; read them from `cmux vm ls` and `--help` output rather than assuming values from this file.

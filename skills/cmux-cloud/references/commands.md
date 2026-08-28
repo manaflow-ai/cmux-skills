@@ -1,6 +1,6 @@
 # cmux Cloud command reference
 
-All host-side commands go through the running cmux macOS app's socket; `cmux cloud` is an alias for `cmux vm`. Add `--json` to any command for machine-readable output. Run `cmux vm <sub> --help` (or trigger the usage error with `cmux vm help`) to see the exact surface of the installed build, which is authoritative over this file.
+All host-side commands go through the running cmux macOS app's socket; `cmux cloud` is an alias for `cmux vm`. Add `--json` for machine-readable output on commands that document it (interactive verbs like `shell`, `tui`, and `desktop` have none). Run `cmux vm <sub> --help` (or trigger the usage error with `cmux vm help`) to see the exact surface of the installed build, which is authoritative over this file.
 
 ## List and inspect
 
@@ -14,7 +14,7 @@ cmux vm handoff <id>      # one-screen summary with attach/inspect commands
 cmux vm tree [<machine>|local] [--refresh]   # Finder-style catalog of every surface
 ```
 
-Machine ids are generated names like `brave-otter`; the id is the address. `cmux vm ls` ends with the plan meter (`N of M machines on the <plan> plan`) and, on free plans, a countdown until free cloud access expires. `cmux vm tree` (same as `cmux surface ls`) lists This Mac plus every machine: its cmux-tui workspaces, terminals (title, cwd, agent state, whether a local pane already shows it), desktop, and forwarded ports — every line is an address `cmux vm open` accepts.
+Machine ids are generated names like `brave-otter`; the id is the address. `cmux vm ls` ends with the plan meter (`N of M machines on the <plan> plan`) and, on free plans, a countdown until free cloud access expires. `cmux vm tree` (same as `cmux surface ls`) lists This Mac plus every machine: its cmux-tui workspaces, terminals (title, cwd, agent state, whether a local pane already shows it), desktop, and forwarded ports — every line is an address `cmux vm open` (machine targets) or `cmux surface open` (any entry, including This Mac) accepts.
 
 ## Create
 
@@ -63,7 +63,7 @@ cmux vm ssh <id>                         # force plain SSH transport (degraded f
 cmux vm ssh-info <id>                    # print SSH host/port/user/credential info
 ```
 
-`shell` uses the managed attach path: a short-lived lease to the machine's cmuxd-remote WebSocket PTY. It survives reconnects, keeps scrollback on the machine, and is the same session primitive iOS uses. `ssh` is the explicit fallback; some providers cannot mint SSH at all. `vm open` targets come from `cmux vm tree`. `--focus` defaults to false, so panes open beside the caller. See also `cmux surface open` / `cmux surface new-terminal` for the same catalog addressed as surfaces.
+`shell` uses the managed attach path: a short-lived lease to the machine's session daemon (cmux-tui on current images, cmuxd-remote WebSocket PTY on older ones); the transport depends on what the provider and image support. It survives reconnects, keeps scrollback on the machine, and is the same session primitive iOS uses. `ssh` forces the SSH fallback, which some providers and images cannot mint at all. `vm open` targets come from `cmux vm tree`. `--focus` defaults to false, so panes open beside the caller. See also `cmux surface open` / `cmux surface new-terminal` for the same catalog addressed as surfaces.
 
 ## Run commands
 
