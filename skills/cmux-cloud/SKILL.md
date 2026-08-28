@@ -78,7 +78,7 @@ cmux vm fork <id>                           # copy of a running machine
 
 ## Inside a machine
 
-The guest `cmux` binary is cmuxd-remote's relay CLI. Its commands are forwarded to the **connected cmux app on the user's Mac**, not executed in the VM: `cmux notify` posts to the user's notification center, `cmux browser …` drives the Mac's browser panes, `cmux read-screen` / `send` / workspace and pane verbs act on the Mac's UI. It resolves its socket from `CMUX_SOCKET_PATH`, then `~/.cmux/socket_addr`, then the cloud CLI bridge socket; if no client is attached, relay commands fail — that is expected, not a broken install.
+The guest `cmux` binary is the machine's relay CLI. Its commands are forwarded to the **connected cmux app on the user's Mac**, not executed in the VM: `cmux notify` posts to the user's notification center, `cmux browser …` drives the Mac's browser panes, `cmux read-screen` / `send` / workspace and pane verbs act on the Mac's UI. It resolves its socket from `CMUX_SOCKET_PATH`, then `~/.cmux/socket_addr`, then the cloud CLI bridge socket; if no client is attached, relay commands fail — that is expected, not a broken install.
 
 The one every cloud agent should know:
 
