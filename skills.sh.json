@@ -6,6 +6,7 @@
       "title": "cmux core",
       "description": "Drive the cmux CLI, settings, and customization surfaces.",
       "skills": [
+        "cmux",
         "cmux-cli",
         "cmux-config"
       ]
