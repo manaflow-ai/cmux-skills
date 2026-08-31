@@ -37,10 +37,12 @@ jobs:
       )
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # Bound admission per repository, event class, and pull request. A
-    # same-class case-variant comment can replace one pending gate run under
-    # GitHub's default queue; an external webhook is required to eliminate that
-    # residual without a privileged gate.
+    # The repository owner accepts one bounded pending run per repository,
+    # event class, and pull request. GitHub compares the job-level expression
+    # case-insensitively, so a same-class case-variant comment can replace a
+    # pending run before the exact shell check rejects it. This bounds public
+    # runner fanout; only an external webhook or GitHub App can provide lossless
+    # exact-byte admission without granting this gate a privileged token.
     concurrency:
       group: "cla-admission-${{ github.repository }}-${{ github.event_name }}-${{ github.event.issue.number || github.event.pull_request.number }}"
       cancel-in-progress: false
@@ -305,8 +307,10 @@ jobs:
             fi
           fi
       - name: "CLA Assistant v2"
-        # The action handles signing and status updates. Merged pull requests
-        # are locked by the separate job to keep lock permissions isolated.
+        # The action writes the signature ledger and issue comments. GitHub
+        # creates the displayed job check run; the maintained source makes no
+        # commit-status API call, so statuses:write is intentionally omitted.
+        # Merged pull requests are locked by the separate job.
         uses: manaflow-ai/cla-github-action@bc206ed9b52ad0b0cbe85244ce522e5e9b65c10e # final reviewed maintained fork runtime+dist, edited-comment and head-binding fixes
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
