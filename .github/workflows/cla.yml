@@ -152,10 +152,12 @@ jobs:
       )
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Serialize signer events for this PR. The merged-only lock has its own
-    # per-PR queue, so lifecycle events cannot replace a pending lock.
+    # Serialize signer events by repository, event class, PR, and finite
+    # sign/recheck class. This prevents a comment run from replacing a
+    # pending pull_request_target lifecycle validation. The merged-only lock
+    # has its own per-PR queue.
     concurrency:
-      group: "cla-signatures-${{ github.repository }}-${{ github.event.issue.number || github.event.pull_request.number }}"
+      group: "cla-signatures-${{ github.repository }}-${{ github.event_name }}-${{ github.event.issue.number || github.event.pull_request.number }}-${{ github.event.comment.body == 'recheck' }}"
       cancel-in-progress: false
     # Keep the token scoped to the GitHub API operations used by this job.
     permissions:
