@@ -53,35 +53,63 @@ jobs:
       group: "cla-admission-${{ github.repository }}-${{ github.event_name }}-${{ github.event.issue.number || github.event.pull_request.number }}"
       cancel-in-progress: false
     permissions: {}
+    outputs:
+      admitted: ${{ steps.admission.outputs.admitted }}
     steps:
       - name: "Validate exact CLA trigger"
+        id: admission
         env:
           EVENT_NAME: ${{ github.event_name }}
           EVENT_ACTION: ${{ github.event.action }}
           COMMENT_BODY: ${{ github.event.comment.body || '' }}
           COMMENT_USER_TYPE: ${{ github.event.comment.user.type || '' }}
           COMMENT_USER_ID: "${{ github.event.comment.user.id || '' }}"
+          COMMENT_ISSUE_STATE: "${{ github.event.issue.state || '' }}"
+          COMMENT_IS_PULL_REQUEST: "${{ github.event.issue.pull_request != null }}"
         run: |
           set -euo pipefail
+          emit_admission() {
+            local value="$1"
+            if ! printf 'admitted=%s\n' "${value}" >> "${GITHUB_OUTPUT:-}"; then
+              echo "::error::Could not publish the CLA admission result"
+              return 1
+            fi
+          }
+          reject_trigger() {
+            if ! emit_admission false; then
+              return 1
+            fi
+            echo "::notice::The event did not contain an exact human CLA trigger; no signer run is admitted."
+          }
+          if [[ -z "${GITHUB_OUTPUT:-}" ]]; then
+            echo "::error::GITHUB_OUTPUT is unavailable; refusing to admit a CLA trigger"
+            exit 1
+          fi
           if [[ "${EVENT_NAME}" == "issue_comment" ]]; then
-            if [[ "${COMMENT_USER_TYPE}" != "User" ||
-                  ! "${COMMENT_USER_ID}" =~ ^[1-9][0-9]*$ ]]; then
-              echo "::error::The CLA comment author must be a human GitHub user with a positive numeric ID"
-              exit 1
-            fi
-            if [[ "${COMMENT_BODY}" != "recheck" &&
+            if [[ "${EVENT_ACTION}" != "created" ||
+                  "${COMMENT_ISSUE_STATE}" != "open" ||
+                  "${COMMENT_IS_PULL_REQUEST}" != "true" ||
+                  "${COMMENT_USER_TYPE}" != "User" ]] ||
+               ! [[ "${COMMENT_USER_ID}" =~ ^[1-9][0-9]*$ ]] ||
+               [[ "${COMMENT_BODY}" != "recheck" &&
                   "${COMMENT_BODY}" != "I have read the CLA Document and I hereby sign the CLA" ]]; then
-              echo "::error::The comment is not an exact CLA declaration or recheck command"
-              exit 1
+              if ! reject_trigger; then
+                exit 1
+              fi
+              exit 0
             fi
+            emit_admission true
           elif [[ "${EVENT_NAME}" == "pull_request_target" ]]; then
             case "${EVENT_ACTION}" in
               opened|reopened|synchronize|edited) ;;
               *)
-                echo "::error::The pull request event is not an accepted CLA trigger"
-                exit 1
+                if ! reject_trigger; then
+                  exit 1
+                fi
+                exit 0
                 ;;
             esac
+            emit_admission true
           else
             echo "::error::The event is not an accepted CLA trigger"
             exit 1
@@ -117,6 +145,10 @@ jobs:
             github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA'
           )
         )
+      ) &&
+      (
+        needs.CLACommentGate.result != 'success' ||
+        needs.CLACommentGate.outputs.admitted == 'true'
       )
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -138,10 +170,11 @@ jobs:
         if: ${{ always() }}
         env:
           GATE_RESULT: "${{ needs.CLACommentGate.result }}"
+          GATE_ADMITTED: "${{ needs.CLACommentGate.outputs.admitted || '' }}"
         run: |
           set -euo pipefail
-          if [[ "${GATE_RESULT}" != "success" ]]; then
-            echo "::error::The unprivileged CLA trigger gate did not pass; refusing to run the signer."
+          if [[ "${GATE_RESULT}" != "success" || "${GATE_ADMITTED}" != "true" ]]; then
+            echo "::error::The unprivileged CLA trigger gate did not admit this event; refusing to run the signer."
             exit 1
           fi
       - name: "Reject pull requests with more than 1000 commits"
