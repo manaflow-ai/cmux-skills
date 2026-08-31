@@ -87,7 +87,7 @@ jobs:
       github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     concurrency:
-      group: cla-locks
+      group: cla-signatures
       queue: max
       cancel-in-progress: false
     permissions:
