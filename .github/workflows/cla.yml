@@ -35,10 +35,6 @@ jobs:
       cancel-in-progress: false
     # Keep the token scoped to the GitHub API operations used by this job.
     permissions:
-      # Read-only access is intentional. The archived action's branch-based
-      # rerun is disabled until an exact-head worker is deployed, so required-
-      # check recovery remains advisory.
-      actions: read
       contents: write
       issues: write
       # GitHub's pull_request_target token denied issue comments for fork PRs with
@@ -46,7 +42,9 @@ jobs:
       # Keep write until that live behavior changes.
       pull-requests: write
     steps:
-      - name: "Reject pull requests with more than 100 commits"
+      - name: "Reject pull requests with more than 1000 commits"
+        # The maintained action paginates commit history safely up to 1,000
+        # commits. Keep the workflow admission bound aligned with that limit.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
@@ -113,8 +111,8 @@ jobs:
             echo "::error::CLA preflight returned an invalid pull request commit count; refusing to run."
             exit 1
           fi
-          if (( commit_count > 100 )); then
-            echo "::error::CLA Assistant v2 only evaluates the first 100 pull request commits. Squash this pull request to 100 or fewer commits before signing."
+          if (( commit_count > 1000 )); then
+            echo "::error::CLA Assistant v2 accepts at most 1000 pull request commits. Split this pull request to 1000 or fewer commits before signing."
             exit 1
           fi
       - name: "Validate CLA comment command"
@@ -164,8 +162,8 @@ jobs:
             fi
             if ! ambiguous_count="$(jq -r --arg exact "$EXACT_SIGN_PHRASE" '
               def normalized: sub("^\\s+"; "") | sub("\\s+$"; "") | ascii_downcase;
-              # The archived action finds its generated prompt by this public
-              # marker, so trust only the canonical GitHub Actions identity.
+              # The action finds its generated prompt by this public marker,
+              # so trust only the canonical GitHub Actions identity.
               def canonical_bot:
                 .user.login == "github-actions[bot]" and
                 .user.type == "Bot" and
@@ -218,17 +216,15 @@ jobs:
           fi
       - name: "CLA Assistant v2"
         # The action handles signing and status updates. Merged pull requests
-        # are locked by the separate job because the archived action sends an
-        # invalid lock request.
-        uses: contributor-assistant/github-action@ca4a40a7d1004f18d9960b404b97e5f30a505a08 # v2.6.1
+        # are locked by the separate job to keep lock permissions isolated.
+        uses: manaflow-ai/cla-github-action@a34b7274a1f68a0d7bcb11e62a5f1454ea15515c # reviewed maintained fork
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           path-to-signatures: 'signatures/version1/cla.json'
           path-to-document: 'https://github.com/manaflow-ai/cmux-skills/blob/${{ github.workflow_sha }}/CLA.md'
-          # The archived action calls the lock endpoint without the required
-          # lock_reason. Disable that broken path and use the explicit step
-          # below, which supplies a valid reason and fails on API errors.
+          # Locking is handled by the merged-only job below, which supplies a
+          # valid reason and verifies the resulting lock state.
           lock-pullrequest-aftermerge: 'false'
           custom-pr-sign-comment: 'I have read the CLA Document and I hereby sign the CLA'
           required-base-ref: 'main'
