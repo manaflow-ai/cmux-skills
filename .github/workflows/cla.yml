@@ -90,8 +90,11 @@ jobs:
   CLAAssistant:
     name: "CLA Assistant v2"
     needs: CLACommentGate
+    # Keep a visible signer result when the unprivileged gate rejects a
+    # case-insensitive expression match. The first step fails closed before
+    # any privileged API operation.
     if: >-
-      needs.CLACommentGate.result == 'success' &&
+      always() &&
       (
         (
           github.event_name == 'pull_request_target' &&
@@ -117,8 +120,8 @@ jobs:
       )
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Serialize signer and lock events for this PR. Independent PRs can run
-    # concurrently; the maintained action retries shared-ledger writes.
+    # Serialize signer events for this PR. The merged-only lock has its own
+    # per-PR queue, so lifecycle events cannot replace a pending lock.
     concurrency:
       group: "cla-signatures-${{ github.repository }}-${{ github.event.issue.number || github.event.pull_request.number }}"
       cancel-in-progress: false
@@ -131,9 +134,21 @@ jobs:
       # Keep write until that live behavior changes.
       pull-requests: write
     steps:
+      - name: "Require successful CLA admission"
+        if: ${{ always() }}
+        env:
+          GATE_RESULT: "${{ needs.CLACommentGate.result }}"
+        run: |
+          set -euo pipefail
+          if [[ "${GATE_RESULT}" != "success" ]]; then
+            echo "::error::The unprivileged CLA trigger gate did not pass; refusing to run the signer."
+            exit 1
+          fi
       - name: "Reject pull requests with more than 1000 commits"
-        # The maintained action paginates commit history safely up to 1,000
-        # commits. Keep the workflow admission bound aligned with that limit.
+        if: ${{ success() }}
+        # Keep this hard 1,000-commit availability bound as a conservative
+        # workflow limit while the maintained action's identity assertion
+        # envelope is reviewed. This prevents unbounded API work.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
@@ -231,6 +246,7 @@ jobs:
             exit 1
           fi
       - name: "Validate CLA comment command"
+        if: ${{ success() }}
         env:
           EVENT_NAME: ${{ github.event_name }}
           COMMENT_BODY: ${{ github.event.comment.body || '' }}
@@ -243,6 +259,7 @@ jobs:
             exit 1
           fi
       - name: "Validate bounded CLA comment history"
+        if: ${{ success() }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
@@ -323,6 +340,7 @@ jobs:
             fi
           fi
       - name: "CLA Assistant v2"
+        if: ${{ success() }}
         # The action writes the signature ledger and issue comments. GitHub
         # creates the displayed job check run; the maintained source makes no
         # commit-status API call, so statuses:write is intentionally omitted.
