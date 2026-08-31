@@ -36,7 +36,7 @@ jobs:
     # Serialize signer and lock events for this PR. Independent PRs can run
     # concurrently; the maintained action retries shared-ledger writes.
     concurrency:
-      group: "cla-signatures-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number }}"
+      group: "cla-signatures-${{ github.repository }}-${{ github.event.issue.number || github.event.pull_request.number }}"
       cancel-in-progress: false
     # Keep the token scoped to the GitHub API operations used by this job.
     permissions:
@@ -274,7 +274,7 @@ jobs:
     concurrency:
       # Share the signer group for this PR so a merge lock cannot race its
       # final signature update. Independent PRs remain concurrent.
-      group: "cla-signatures-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number }}"
+      group: "cla-signatures-${{ github.repository }}-${{ github.event.issue.number || github.event.pull_request.number }}"
       cancel-in-progress: false
     permissions:
       issues: write
