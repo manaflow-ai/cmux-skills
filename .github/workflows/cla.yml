@@ -130,6 +130,79 @@ jobs:
             echo "::error::CLA workflow accepts only the exact recheck command or exact electronic signature phrase; refusing to run."
             exit 1
           fi
+      - name: "Reject ambiguous historical CLA comments"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          EVENT_NAME: ${{ github.event_name }}
+          EXACT_SIGN_PHRASE: 'I have read the CLA Document and I hereby sign the CLA'
+        run: |
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            pull_request_target|issue_comment) ;;
+            *) echo "::error::CLA history guard received an unsupported event; refusing to run."; exit 1 ;;
+          esac
+          if ! [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::CLA history guard received an invalid pull request number; refusing to run."
+            exit 1
+          fi
+          comments_endpoint="repos/${GH_REPO}/issues/${PR_NUMBER}/comments"
+          page=1
+          while (( page <= 10 )); do
+            if ! page_json="$(gh api "${comments_endpoint}?per_page=100&page=${page}" 2>/dev/null)"; then
+              echo "::error::CLA history guard could not read issue comments; refusing to run."
+              exit 1
+            fi
+            if ! jq -e 'type == "array" and all(.[]; ((.body | type) == "string" and (.user.login | type) == "string"))' <<<"$page_json" >/dev/null 2>&1; then
+              echo "::error::CLA history guard received malformed issue comments; refusing to run."
+              exit 1
+            fi
+            if ! page_count="$(jq -r 'length' <<<"$page_json" 2>/dev/null)" ||
+               ! [[ "$page_count" =~ ^[0-9]+$ ]] || (( page_count > 100 )); then
+              echo "::error::CLA history guard received an invalid issue-comment page; refusing to run."
+              exit 1
+            fi
+            if ! ambiguous_count="$(jq -r --arg exact "$EXACT_SIGN_PHRASE" '
+              def normalized: sub("^\\s+"; "") | sub("\\s+$"; "") | ascii_downcase;
+              [ .[]
+                | select(.user.login != "github-actions[bot]")
+                | select(.body != $exact)
+                | select((.body | normalized) | test("i\\s*have\\s*read\\s*the\\s*cla\\s*document\\s*and\\s*i\\s*hereby\\s*sign\\s*the\\s*cla"; "s"))
+              ] | length
+            ' <<<"$page_json" 2>/dev/null)" ||
+               ! [[ "$ambiguous_count" =~ ^[0-9]+$ ]]; then
+              echo "::error::CLA history guard could not inspect issue-comment bodies; refusing to run."
+              exit 1
+            fi
+            if (( ambiguous_count > 0 )); then
+              echo "::error::CLA history guard found a non-canonical historical signature comment; refusing to run."
+              exit 1
+            fi
+            if (( page_count < 100 )); then
+              break
+            fi
+            page=$((page + 1))
+          done
+          if (( page == 11 )); then
+            if ! overflow_json="$(gh api "${comments_endpoint}?per_page=1&page=11" 2>/dev/null)"; then
+              echo "::error::CLA history guard could not verify the 1000-comment limit; refusing to run."
+              exit 1
+            fi
+            if ! jq -e 'type == "array" and all(.[]; ((.body | type) == "string" and (.user.login | type) == "string"))' <<<"$overflow_json" >/dev/null 2>&1; then
+              echo "::error::CLA history guard received malformed overflow comments; refusing to run."
+              exit 1
+            fi
+            if ! overflow_count="$(jq -r 'length' <<<"$overflow_json" 2>/dev/null)" ||
+               ! [[ "$overflow_count" =~ ^[0-9]+$ ]]; then
+              echo "::error::CLA history guard received an invalid overflow page; refusing to run."
+              exit 1
+            fi
+            if (( overflow_count > 0 )); then
+              echo "::error::CLA history guard refuses pull requests with more than 1000 issue comments; refusing to run."
+              exit 1
+            fi
+          fi
       - name: "CLA Assistant v2"
         # The action handles signing and status updates. Merged pull requests
         # are locked by the separate job because the archived action sends an
