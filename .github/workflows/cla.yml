@@ -117,6 +117,18 @@ jobs:
             echo "::error::CLA Assistant only evaluates the first 100 pull request commits. Squash this pull request to 100 or fewer commits before signing."
             exit 1
           fi
+      - name: "Validate CLA comment command"
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          COMMENT_BODY: ${{ github.event.comment.body || '' }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "issue_comment" ]] &&
+             [[ "$COMMENT_BODY" != "recheck" ]] &&
+             [[ "$COMMENT_BODY" != "I have read the CLA Document and I hereby sign the CLA" ]]; then
+            echo "::error::CLA workflow accepts only the exact recheck command or exact electronic signature phrase; refusing to run."
+            exit 1
+          fi
       - name: "CLA Assistant"
         # The action handles signing and status updates. Merged pull requests
         # are locked by the separate job because the archived action sends an
@@ -132,6 +144,7 @@ jobs:
           # below, which supplies a valid reason and fails on API errors.
           lock-pullrequest-aftermerge: 'false'
           custom-pr-sign-comment: 'I have read the CLA Document and I hereby sign the CLA'
+          required-base-ref: 'main'
           # signatures live on the unprotected cla-signatures branch so required checks on main don't block the bot's signature commits
           branch: 'cla-signatures'
 
