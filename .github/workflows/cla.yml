@@ -16,6 +16,9 @@ jobs:
     # coarse admission filter, and the shell step below is the exact,
     # case-sensitive check. GitHub expressions compare strings without case,
     # so the shell remains the authority for the declaration itself.
+    # Issue comments must come from human users. A future automation exception
+    # requires a separately reviewed positive numeric allowlist-ids entry in
+    # the maintained action, never a name-based workflow allowlist.
     if: >-
       (
         github.event_name == 'pull_request_target' &&
@@ -30,6 +33,9 @@ jobs:
         github.event_name == 'issue_comment' &&
         github.event.issue.state == 'open' &&
         github.event.issue.pull_request &&
+        github.event.comment.user.type == 'User' &&
+        github.event.comment.user.id != null &&
+        github.event.comment.user.id > 0 &&
         (
           github.event.comment.body == 'recheck' ||
           github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA'
@@ -53,9 +59,16 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           EVENT_ACTION: ${{ github.event.action }}
           COMMENT_BODY: ${{ github.event.comment.body || '' }}
+          COMMENT_USER_TYPE: ${{ github.event.comment.user.type || '' }}
+          COMMENT_USER_ID: "${{ github.event.comment.user.id || '' }}"
         run: |
           set -euo pipefail
           if [[ "${EVENT_NAME}" == "issue_comment" ]]; then
+            if [[ "${COMMENT_USER_TYPE}" != "User" ||
+                  ! "${COMMENT_USER_ID}" =~ ^[1-9][0-9]*$ ]]; then
+              echo "::error::The CLA comment author must be a human GitHub user with a positive numeric ID"
+              exit 1
+            fi
             if [[ "${COMMENT_BODY}" != "recheck" &&
                   "${COMMENT_BODY}" != "I have read the CLA Document and I hereby sign the CLA" ]]; then
               echo "::error::The comment is not an exact CLA declaration or recheck command"
@@ -93,6 +106,9 @@ jobs:
           github.event_name == 'issue_comment' &&
           github.event.issue.pull_request &&
           github.event.issue.state == 'open' &&
+          github.event.comment.user.type == 'User' &&
+          github.event.comment.user.id != null &&
+          github.event.comment.user.id > 0 &&
           (
             github.event.comment.body == 'recheck' ||
             github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA'
