@@ -37,8 +37,12 @@ jobs:
       )
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # Keep this gate out of concurrency. Every candidate comment must be
-    # checked before the privileged signer can enter its per-PR queue.
+    # Bound admission per pull request. A case-variant comment can replace one
+    # pending gate run under GitHub's default queue; an external webhook is
+    # required to eliminate that residual without a privileged gate.
+    concurrency:
+      group: "cla-admission-${{ github.repository }}-${{ github.event.issue.number || github.event.pull_request.number }}"
+      cancel-in-progress: false
     permissions: {}
     steps:
       - name: "Validate exact CLA trigger"
