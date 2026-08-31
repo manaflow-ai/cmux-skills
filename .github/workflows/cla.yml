@@ -165,10 +165,24 @@ jobs:
             fi
             if ! ambiguous_count="$(jq -r --arg exact "$EXACT_SIGN_PHRASE" '
               def normalized: sub("^\\s+"; "") | sub("\\s+$"; "") | ascii_downcase;
+              # The archived action finds its generated prompt by this public
+              # marker, so trust only the canonical GitHub Actions identity.
+              def canonical_bot:
+                .user.login == "github-actions[bot]" and
+                .user.type == "Bot" and
+                .user.id == 41898282;
               [ .[]
-                | select((.body | normalized) | test("i\\s*have\\s*read\\s*the\\s*cla\\s*document\\s*and\\s*i\\s*hereby\\s*sign\\s*the\\s*cla"; "s"))
-                | select(.user.login == "github-actions[bot]" and .user.type == "Bot" | not)
-                | select(.user.login == "github-actions[bot]" or .user.type != "User" or .body != $exact)
+                | select(
+                    (
+                      ((.body | test("CLA Assistant Lite bot"; "s")) and (canonical_bot | not))
+                      or
+                      (
+                        (canonical_bot | not)
+                        and ((.body | normalized) | test("i\\s*have\\s*read\\s*the\\s*cla\\s*document\\s*and\\s*i\\s*hereby\\s*sign\\s*the\\s*cla"; "s"))
+                        and (.user.login == "github-actions[bot]" or .user.type != "User" or .body != $exact)
+                      )
+                    )
+                  )
               ] | length
             ' <<<"$page_json" 2>/dev/null)" ||
                ! [[ "$ambiguous_count" =~ ^[0-9]+$ ]]; then
@@ -176,7 +190,7 @@ jobs:
               exit 1
             fi
             if (( ambiguous_count > 0 )); then
-              echo "::error::CLA history guard found a non-canonical historical signature comment; refusing to run."
+              echo "::error::CLA history guard found an ambiguous historical CLA comment or bot marker; refusing to run."
               exit 1
             fi
             if (( page_count < 100 )); then
