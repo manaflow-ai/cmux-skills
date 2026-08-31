@@ -245,6 +245,7 @@ jobs:
       cancel-in-progress: false
     permissions:
       issues: write
+      pull-requests: read
     steps:
       - name: "Lock merged pull request"
         env:
