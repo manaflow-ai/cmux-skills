@@ -112,13 +112,27 @@ jobs:
           set -euo pipefail
           issue_endpoint="repos/${GH_REPO}/issues/${PR_NUMBER}"
           lock_endpoint="${issue_endpoint}/lock"
-          if [[ "$(gh api "${issue_endpoint}" --jq '.locked')" == "true" ]]; then
+          if ! locked="$(gh api "${issue_endpoint}" --jq '.locked' 2>/dev/null)"; then
+            echo "::error::CLA lock step could not read the pull request lock state; refusing to continue."
+            exit 1
+          fi
+          if [[ "$locked" == "true" ]]; then
             echo "Pull request ${PR_NUMBER} is already locked"
             exit 0
           fi
-          gh api --method PUT \
+          if ! gh api --method PUT \
             --header 'Accept: application/vnd.github+json' \
             --header 'X-GitHub-Api-Version: 2022-11-28' \
             "${lock_endpoint}" \
-            --field lock_reason=resolved
-          [[ "$(gh api "${issue_endpoint}" --jq '.locked')" == "true" ]]
+            --field lock_reason=resolved >/dev/null 2>&1; then
+            echo "::error::CLA lock step could not lock the merged pull request."
+            exit 1
+          fi
+          if ! locked="$(gh api "${issue_endpoint}" --jq '.locked' 2>/dev/null)"; then
+            echo "::error::CLA lock step could not verify the pull request lock state."
+            exit 1
+          fi
+          if [[ "$locked" != "true" ]]; then
+            echo "::error::CLA lock step did not observe the pull request as locked."
+            exit 1
+          fi
