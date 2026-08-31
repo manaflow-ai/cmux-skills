@@ -331,9 +331,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     concurrency:
-      # Share the signer group for this PR so a merge lock cannot race its
-      # final signature update. Independent PRs remain concurrent.
-      group: "cla-signatures-${{ github.repository }}-${{ github.event.issue.number || github.event.pull_request.number }}"
+      # Keep merged-pull-request locks in their own per-PR queue. A later
+      # lifecycle event must not replace a pending lock with a signer run.
+      group: "cla-lock-${{ github.repository }}-${{ github.event.pull_request.number }}"
       cancel-in-progress: false
     permissions:
       issues: write
