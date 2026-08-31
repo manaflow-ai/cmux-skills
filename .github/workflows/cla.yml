@@ -307,7 +307,7 @@ jobs:
       - name: "CLA Assistant v2"
         # The action handles signing and status updates. Merged pull requests
         # are locked by the separate job to keep lock permissions isolated.
-        uses: manaflow-ai/cla-github-action@056a0e9d7237954489ab474f24e66c2e742e78f9 # final reviewed maintained fork runtime+dist, edited-comment fix
+        uses: manaflow-ai/cla-github-action@bc206ed9b52ad0b0cbe85244ce522e5e9b65c10e # final reviewed maintained fork runtime+dist, edited-comment and head-binding fixes
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
