@@ -3,6 +3,7 @@ on:
   issue_comment:
     types: [created]
   pull_request_target:
+    branches: [main]
     types: [opened,closed,reopened,synchronize]
 
 # Jobs declare only the permissions they need.
@@ -50,6 +51,14 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
         run: |
           set -euo pipefail
+          if ! base_ref="$(gh api "repos/${GH_REPO}/pulls/${PR_NUMBER}" --jq '.base.ref' 2>/dev/null)"; then
+            echo "::error::CLA preflight could not read the pull request base branch; refusing to run."
+            exit 1
+          fi
+          if [[ "$base_ref" != "main" ]]; then
+            echo "::error::CLA workflow only accepts pull requests targeting the main branch; refusing to run."
+            exit 1
+          fi
           if ! commit_count="$(gh api "repos/${GH_REPO}/pulls/${PR_NUMBER}" --jq '.commits' 2>/dev/null)"; then
             echo "::error::CLA preflight could not read the pull request commit count; refusing to run."
             exit 1
