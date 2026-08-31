@@ -154,7 +154,7 @@ jobs:
               echo "::error::CLA history guard could not read issue comments; refusing to run."
               exit 1
             fi
-            if ! jq -e 'type == "array" and all(.[]; ((.body | type) == "string" and (.user.login | type) == "string"))' <<<"$page_json" >/dev/null 2>&1; then
+            if ! jq -e 'type == "array" and all(.[]; ((.body | type) == "string" and (.user.login | type) == "string" and (.user.type | type) == "string" and (.user.id | type) == "number" and (.user.id | . > 0) and (.user.id | . == floor)))' <<<"$page_json" >/dev/null 2>&1; then
               echo "::error::CLA history guard received malformed issue comments; refusing to run."
               exit 1
             fi
@@ -166,9 +166,9 @@ jobs:
             if ! ambiguous_count="$(jq -r --arg exact "$EXACT_SIGN_PHRASE" '
               def normalized: sub("^\\s+"; "") | sub("\\s+$"; "") | ascii_downcase;
               [ .[]
-                | select(.user.login != "github-actions[bot]")
-                | select(.body != $exact)
                 | select((.body | normalized) | test("i\\s*have\\s*read\\s*the\\s*cla\\s*document\\s*and\\s*i\\s*hereby\\s*sign\\s*the\\s*cla"; "s"))
+                | select(.user.login == "github-actions[bot]" and .user.type == "Bot" | not)
+                | select(.user.login == "github-actions[bot]" or .user.type != "User" or .body != $exact)
               ] | length
             ' <<<"$page_json" 2>/dev/null)" ||
                ! [[ "$ambiguous_count" =~ ^[0-9]+$ ]]; then
@@ -189,7 +189,7 @@ jobs:
               echo "::error::CLA history guard could not verify the 1000-comment limit; refusing to run."
               exit 1
             fi
-            if ! jq -e 'type == "array" and all(.[]; ((.body | type) == "string" and (.user.login | type) == "string"))' <<<"$overflow_json" >/dev/null 2>&1; then
+            if ! jq -e 'type == "array" and all(.[]; ((.body | type) == "string" and (.user.login | type) == "string" and (.user.type | type) == "string" and (.user.id | type) == "number" and (.user.id | . > 0) and (.user.id | . == floor)))' <<<"$overflow_json" >/dev/null 2>&1; then
               echo "::error::CLA history guard received malformed overflow comments; refusing to run."
               exit 1
             fi
