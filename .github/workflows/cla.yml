@@ -96,6 +96,8 @@ jobs:
             echo "::error::CLA preflight returned incomplete pull request metadata; refusing to run."
             exit 1
           fi
+          # Bot-opened PRs stay rejected until a reviewed numeric opener
+          # exemption is approved. Name-based allowlists are not allowed.
           if [[ "$live_state" != "open" ]] ||
              ! [[ "$live_head_sha" =~ ^[0-9a-fA-F]{40}$ ]] ||
              [[ -z "$live_head_ref" || -z "$live_head_repo" ]] ||
