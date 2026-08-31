@@ -10,9 +10,68 @@ on:
 permissions: {}
 
 jobs:
+  CLACommentGate:
+    name: "Validate CLA trigger"
+    # This job is intentionally unprivileged. The job-level expression is a
+    # coarse admission filter, and the shell step below is the exact,
+    # case-sensitive check. GitHub expressions compare strings without case,
+    # so the shell remains the authority for the declaration itself.
+    if: >-
+      (
+        github.event_name == 'pull_request_target' &&
+        (
+          github.event.action == 'opened' ||
+          github.event.action == 'reopened' ||
+          github.event.action == 'synchronize' ||
+          github.event.action == 'edited'
+        )
+      ) ||
+      (
+        github.event_name == 'issue_comment' &&
+        github.event.issue.state == 'open' &&
+        github.event.issue.pull_request &&
+        (
+          github.event.comment.body == 'recheck' ||
+          github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA'
+        )
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Keep this gate out of concurrency. Every candidate comment must be
+    # checked before the privileged signer can enter its per-PR queue.
+    permissions: {}
+    steps:
+      - name: "Validate exact CLA trigger"
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action }}
+          COMMENT_BODY: ${{ github.event.comment.body || '' }}
+        run: |
+          set -euo pipefail
+          if [[ "${EVENT_NAME}" == "issue_comment" ]]; then
+            if [[ "${COMMENT_BODY}" != "recheck" &&
+                  "${COMMENT_BODY}" != "I have read the CLA Document and I hereby sign the CLA" ]]; then
+              echo "::error::The comment is not an exact CLA declaration or recheck command"
+              exit 1
+            fi
+          elif [[ "${EVENT_NAME}" == "pull_request_target" ]]; then
+            case "${EVENT_ACTION}" in
+              opened|reopened|synchronize|edited) ;;
+              *)
+                echo "::error::The pull request event is not an accepted CLA trigger"
+                exit 1
+                ;;
+            esac
+          else
+            echo "::error::The event is not an accepted CLA trigger"
+            exit 1
+          fi
+
   CLAAssistant:
     name: "CLA Assistant v2"
+    needs: CLACommentGate
     if: >-
+      needs.CLACommentGate.result == 'success' &&
       (
         github.event_name == 'pull_request_target' &&
         (
