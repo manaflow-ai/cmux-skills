@@ -283,32 +283,112 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          EVENT_REPO: "${{ github.event.repository.full_name || '' }}"
+          EVENT_REPO_ID: "${{ github.event.repository.id || '' }}"
+          PR_NUMBER: "${{ github.event.pull_request.number || '' }}"
+          EVENT_ACTION: "${{ github.event.action || '' }}"
+          EVENT_STATE: "${{ github.event.pull_request.state || '' }}"
+          EVENT_MERGED: "${{ github.event.pull_request.merged || false }}"
+          EVENT_BASE_REF: "${{ github.event.pull_request.base.ref || '' }}"
+          EVENT_BASE_REPO: "${{ github.event.pull_request.base.repo.full_name || '' }}"
+          EVENT_BASE_REPO_ID: "${{ github.event.pull_request.base.repo.id || '' }}"
+          EVENT_HEAD_SHA: "${{ github.event.pull_request.head.sha || '' }}"
+          EVENT_HEAD_REF: "${{ github.event.pull_request.head.ref || '' }}"
+          EVENT_HEAD_REPO: "${{ github.event.pull_request.head.repo.full_name || '' }}"
+          EVENT_HEAD_REPO_ID: "${{ github.event.pull_request.head.repo.id || '' }}"
+          EVENT_OPENER_LOGIN: "${{ github.event.pull_request.user.login || '' }}"
+          EVENT_OPENER_ID: "${{ github.event.pull_request.user.id || '' }}"
         run: |
           set -euo pipefail
+
+          fail() {
+            echo "::error::$1"
+            exit 1
+          }
+
+          [[ "$EVENT_REPO" == "$GH_REPO" ]] || fail "CLA lock event targets an unexpected repository."
+          [[ "$EVENT_REPO_ID" =~ ^[1-9][0-9]*$ ]] || fail "CLA lock event has no valid repository ID."
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]] || fail "CLA lock event has no valid pull request number."
+          if [[ "$EVENT_ACTION" != "closed" || "$EVENT_STATE" != "closed" || "$EVENT_MERGED" != "true" ]]; then
+            fail "CLA lock event is not a closed merged pull request."
+          fi
+          [[ "$EVENT_BASE_REF" == "main" ]] || fail "CLA lock event targets an unexpected base branch."
+          [[ "$EVENT_BASE_REPO" == "$GH_REPO" ]] || fail "CLA lock event targets an unexpected base repository."
+          [[ "$EVENT_BASE_REPO_ID" =~ ^[1-9][0-9]*$ ]] || fail "CLA lock event has no valid base repository ID."
+          [[ "$EVENT_BASE_REPO_ID" == "$EVENT_REPO_ID" ]] || fail "CLA lock event base repository ID does not match the event repository."
+          [[ "$EVENT_HEAD_SHA" =~ ^[0-9a-fA-F]{40}$ ]] || fail "CLA lock event has no valid head SHA."
+          if [[ -z "$EVENT_HEAD_REF" || "$EVENT_HEAD_REF" == *$'\n'* || "$EVENT_HEAD_REF" == *$'\r'* ]]; then
+            fail "CLA lock event has no valid head ref."
+          fi
+          if [[ -z "$EVENT_HEAD_REPO" || -z "$EVENT_HEAD_REPO_ID" ]]; then
+            [[ -z "$EVENT_HEAD_REPO" && -z "$EVENT_HEAD_REPO_ID" ]] || fail "CLA lock event has incomplete head repository metadata."
+          else
+            [[ "$EVENT_HEAD_REPO" == */* && "$EVENT_HEAD_REPO" != */*/* ]] || fail "CLA lock event has no valid head repository."
+            [[ "$EVENT_HEAD_REPO_ID" =~ ^[1-9][0-9]*$ ]] || fail "CLA lock event has no valid head repository ID."
+          fi
+          if [[ -z "$EVENT_OPENER_LOGIN" || "$EVENT_OPENER_LOGIN" == *$'\n'* || "$EVENT_OPENER_LOGIN" == *$'\r'* ]]; then
+            fail "CLA lock event has no valid pull request opener."
+          fi
+          [[ "$EVENT_OPENER_ID" =~ ^[1-9][0-9]*$ ]] || fail "CLA lock event has no valid opener ID."
+
+          if ! live_pr="$(gh api "repos/${GH_REPO}/pulls/${PR_NUMBER}" --jq '{number: .number, state: .state, merged: .merged, base_ref: .base.ref, base_repo: .base.repo.full_name, base_repo_id: .base.repo.id, head_sha: .head.sha, head_ref: .head.ref, head_repo: (.head.repo | if . == null then null else {full_name: .full_name, id: .id} end), opener_login: .user.login, opener_id: .user.id}' 2>/dev/null)"; then
+            fail "CLA lock step could not read live pull request metadata."
+          fi
+          # GitHub can advance or delete a source branch after merge. Validate
+          # the live head shape, but bind only immutable base and opener data
+          # to the closed event.
+          if ! jq -e \
+            --arg repo "$GH_REPO" \
+            --argjson pr_number "$PR_NUMBER" \
+            --arg base_ref "$EVENT_BASE_REF" \
+            --argjson base_repo_id "$EVENT_BASE_REPO_ID" \
+            --arg opener_login "$EVENT_OPENER_LOGIN" \
+            --argjson opener_id "$EVENT_OPENER_ID" '
+              def nonempty_string:
+                type == "string" and length > 0 and test("^[^\\r\\n]+$");
+              def positive_integer:
+                type == "number" and . > 0 and . == floor;
+              def valid_head_repo:
+                . == null or (
+                  type == "object" and
+                  (.full_name | nonempty_string and test("^[^/]+/[^/]+$")) and
+                  (.id | positive_integer)
+                );
+              .number == $pr_number and
+              .state == "closed" and
+              .merged == true and
+              (.base_ref | nonempty_string and . == $base_ref and . == "main") and
+              (.base_repo | nonempty_string and ascii_downcase == ($repo | ascii_downcase)) and
+              (.base_repo_id | positive_integer and . == $base_repo_id) and
+              (.head_sha | type == "string" and test("^[0-9a-fA-F]{40}$")) and
+              (.head_ref | nonempty_string) and
+              (.head_repo | valid_head_repo) and
+              (.opener_login | nonempty_string and ascii_downcase == ($opener_login | ascii_downcase)) and
+              (.opener_id | positive_integer and . == $opener_id)
+            ' <<<"$live_pr" >/dev/null 2>&1; then
+            fail "CLA lock step found invalid or changed merged pull request identity."
+          fi
+
           issue_endpoint="repos/${GH_REPO}/issues/${PR_NUMBER}"
           lock_endpoint="${issue_endpoint}/lock"
           if ! locked="$(gh api "${issue_endpoint}" --jq '.locked' 2>/dev/null)"; then
-            echo "::error::CLA lock step could not read the pull request lock state; refusing to continue."
-            exit 1
+            fail "CLA lock step could not read the pull request lock state."
           fi
           if [[ "$locked" == "true" ]]; then
             echo "Pull request ${PR_NUMBER} is already locked"
             exit 0
           fi
+          [[ "$locked" == "false" ]] || fail "CLA lock step returned an invalid pull request lock state."
           if ! gh api --method PUT \
             --header 'Accept: application/vnd.github+json' \
             --header 'X-GitHub-Api-Version: 2022-11-28' \
             "${lock_endpoint}" \
             --field lock_reason=resolved >/dev/null 2>&1; then
-            echo "::error::CLA lock step could not lock the merged pull request."
-            exit 1
+            fail "CLA lock step could not lock the merged pull request."
           fi
           if ! locked="$(gh api "${issue_endpoint}" --jq '.locked' 2>/dev/null)"; then
-            echo "::error::CLA lock step could not verify the pull request lock state."
-            exit 1
+            fail "CLA lock step could not verify the pull request lock state."
           fi
           if [[ "$locked" != "true" ]]; then
-            echo "::error::CLA lock step did not observe the pull request as locked."
-            exit 1
+            fail "CLA lock step did not observe the pull request as locked."
           fi
