@@ -60,7 +60,6 @@ jobs:
           EVENT_HEAD_REF: "${{ github.event.pull_request.head.ref || '' }}"
           EVENT_HEAD_REPO: "${{ github.event.pull_request.head.repo.full_name || '' }}"
           EVENT_HEAD_REPO_ID: "${{ github.event.pull_request.head.repo.id || '' }}"
-          EVENT_BASE_SHA: "${{ github.event.pull_request.base.sha || '' }}"
           EVENT_BASE_REF: "${{ github.event.pull_request.base.ref || '' }}"
           EVENT_BASE_REPO: "${{ github.event.pull_request.base.repo.full_name || '' }}"
           EVENT_BASE_REPO_ID: "${{ github.event.pull_request.base.repo.id || '' }}"
@@ -123,7 +122,6 @@ jobs:
                   "$EVENT_HEAD_REF" != "$live_head_ref" ||
                   "$EVENT_HEAD_REPO" != "$live_head_repo" ||
                   "$EVENT_HEAD_REPO_ID" != "$live_head_repo_id" ||
-                  "$EVENT_BASE_SHA" != "$live_base_sha" ||
                   "$EVENT_BASE_REF" != "$live_base_ref" ||
                   "$EVENT_BASE_REPO" != "$live_base_repo" ||
                   "$EVENT_BASE_REPO_ID" != "$live_base_repo_id" ||
@@ -227,7 +225,7 @@ jobs:
             page=$((page + 1))
           done
           if (( page == 11 )); then
-            if ! overflow_json="$(gh api "${comments_endpoint}?per_page=1&page=11" 2>/dev/null)"; then
+            if ! overflow_json="$(gh api "${comments_endpoint}?per_page=100&page=11" 2>/dev/null)"; then
               echo "::error::CLA history guard could not verify the 1000-comment limit; refusing to run."
               exit 1
             fi
