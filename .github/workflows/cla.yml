@@ -5,27 +5,30 @@ on:
   pull_request_target:
     types: [opened,closed,reopened,synchronize]
 
-# Signature updates share one file and must not race.
-concurrency:
-  group: cla-signatures
-  cancel-in-progress: false
-
-# Keep the token scoped to the GitHub API operations used by this action.
-permissions:
-  # The action inspects prior runs; its optional rerun request is best-effort.
-  actions: read
-  contents: write
-  issues: write
-  # GitHub's pull_request_target token denied issue comments for fork PRs with
-  # this set to read, despite the endpoint documentation allowing issues:write.
-  # Keep write until that live behavior changes.
-  pull-requests: write
-  statuses: write
+# Jobs declare only the permissions they need.
+permissions: {}
 
 jobs:
   CLAAssistant:
     name: "CLA Assistant"
     runs-on: ubuntu-latest
+    # Signature updates share one file and must not race. Keep all pending
+    # events instead of replacing the previous pending run.
+    concurrency:
+      group: cla-signatures
+      queue: max
+      cancel-in-progress: false
+    # Keep the token scoped to the GitHub API operations used by this job.
+    permissions:
+      # The action inspects prior runs; its optional rerun request is best-effort.
+      actions: read
+      contents: write
+      issues: write
+      # GitHub's pull_request_target token denied issue comments for fork PRs with
+      # this set to read, despite the endpoint documentation allowing issues:write.
+      # Keep write until that live behavior changes.
+      pull-requests: write
+      statuses: write
     steps:
       - name: "Reject pull requests with more than 100 commits"
         if: >-
@@ -54,8 +57,8 @@ jobs:
           fi
       - name: "CLA Assistant"
         # The action handles signing and status updates. Merged pull requests
-        # use the explicit lock step below because the archived action sends
-        # an invalid lock request.
+        # are locked by the separate job because the archived action sends an
+        # invalid lock request.
         if: >-
           (
             github.event_name == 'pull_request_target' &&
@@ -79,17 +82,21 @@ jobs:
           # lock_reason. Disable that broken path and use the explicit step
           # below, which supplies a valid reason and fails on API errors.
           lock-pullrequest-aftermerge: 'false'
+          custom-pr-sign-comment: 'I have read the CLA Document and I hereby sign the CLA'
           # signatures live on the unprotected cla-signatures branch so required checks on main don't block the bot's signature commits
           branch: 'cla-signatures'
-          # Keep this list explicit. A username prefix is not proof that an
-          # account is a GitHub bot and would let a human bypass the CLA.
-          allowlist: lawrencecchen,github-actions[bot],chatmux-connections[bot]
 
+  LockMergedPullRequest:
+    name: "Lock merged pull request"
+    if: >-
+      github.event_name == 'pull_request_target' &&
+      github.event.action == 'closed' &&
+      github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
       - name: "Lock merged pull request"
-        if: >-
-          github.event_name == 'pull_request_target' &&
-          github.event.action == 'closed' &&
-          github.event.pull_request.merged == true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
