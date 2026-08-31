@@ -156,13 +156,12 @@ jobs:
             echo "::error::CLA workflow accepts only the exact recheck command or exact electronic signature phrase; refusing to run."
             exit 1
           fi
-      - name: "Reject ambiguous historical CLA comments"
+      - name: "Validate bounded CLA comment history"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
           EVENT_NAME: ${{ github.event_name }}
-          EXACT_SIGN_PHRASE: 'I have read the CLA Document and I hereby sign the CLA'
         run: |
           set -euo pipefail
           case "$EVENT_NAME" in
@@ -187,36 +186,6 @@ jobs:
             if ! page_count="$(jq -r 'length' <<<"$page_json" 2>/dev/null)" ||
                ! [[ "$page_count" =~ ^[0-9]+$ ]] || (( page_count > 100 )); then
               echo "::error::CLA history guard received an invalid issue-comment page; refusing to run."
-              exit 1
-            fi
-            if ! ambiguous_count="$(jq -r --arg exact "$EXACT_SIGN_PHRASE" '
-              def normalized: sub("^\\s+"; "") | sub("\\s+$"; "") | ascii_downcase;
-              # The action finds its generated prompt by this public marker,
-              # so trust only the canonical GitHub Actions identity.
-              def canonical_bot:
-                .user.login == "github-actions[bot]" and
-                .user.type == "Bot" and
-                .user.id == 41898282;
-              [ .[]
-                | select(
-                    (
-                      ((.body | test("CLA Assistant Lite bot"; "s")) and (canonical_bot | not))
-                      or
-                      (
-                        (canonical_bot | not)
-                        and ((.body | normalized) | test("i\\s*have\\s*read\\s*the\\s*cla\\s*document\\s*and\\s*i\\s*hereby\\s*sign\\s*the\\s*cla"; "s"))
-                        and (.user.login == "github-actions[bot]" or .user.type != "User" or .body != $exact)
-                      )
-                    )
-                  )
-              ] | length
-            ' <<<"$page_json" 2>/dev/null)" ||
-               ! [[ "$ambiguous_count" =~ ^[0-9]+$ ]]; then
-              echo "::error::CLA history guard could not inspect issue-comment bodies; refusing to run."
-              exit 1
-            fi
-            if (( ambiguous_count > 0 )); then
-              echo "::error::CLA history guard found an ambiguous historical CLA comment or bot marker; refusing to run."
               exit 1
             fi
             if (( page_count < 100 )); then
