@@ -49,15 +49,59 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_HEAD_SHA: "${{ github.event.pull_request.head.sha || '' }}"
+          EVENT_HEAD_REF: "${{ github.event.pull_request.head.ref || '' }}"
+          EVENT_HEAD_REPO: "${{ github.event.pull_request.head.repo.full_name || '' }}"
+          EVENT_HEAD_REPO_ID: "${{ github.event.pull_request.head.repo.id || '' }}"
+          EVENT_BASE_SHA: "${{ github.event.pull_request.base.sha || '' }}"
+          EVENT_BASE_REF: "${{ github.event.pull_request.base.ref || '' }}"
+          EVENT_BASE_REPO: "${{ github.event.pull_request.base.repo.full_name || '' }}"
+          EVENT_BASE_REPO_ID: "${{ github.event.pull_request.base.repo.id || '' }}"
         run: |
           set -euo pipefail
-          if ! base_ref="$(gh api "repos/${GH_REPO}/pulls/${PR_NUMBER}" --jq '.base.ref' 2>/dev/null)"; then
-            echo "::error::CLA preflight could not read the pull request base branch; refusing to run."
+          if ! live_pr="$(gh api "repos/${GH_REPO}/pulls/${PR_NUMBER}" --jq '{state: .state, head_sha: .head.sha, head_ref: .head.ref, head_repo: .head.repo.full_name, head_repo_id: .head.repo.id, base_sha: .base.sha, base_ref: .base.ref, base_repo: .base.repo.full_name, base_repo_id: .base.repo.id}' 2>/dev/null)"; then
+            echo "::error::CLA preflight could not read live pull request metadata; refusing to run."
             exit 1
           fi
-          if [[ "$base_ref" != "main" ]]; then
-            echo "::error::CLA workflow only accepts pull requests targeting the main branch; refusing to run."
+          if ! live_state="$(jq -er '.state' <<<"$live_pr" 2>/dev/null)" ||
+             ! live_head_sha="$(jq -er '.head_sha' <<<"$live_pr" 2>/dev/null)" ||
+             ! live_head_ref="$(jq -er '.head_ref' <<<"$live_pr" 2>/dev/null)" ||
+             ! live_head_repo="$(jq -er '.head_repo' <<<"$live_pr" 2>/dev/null)" ||
+             ! live_head_repo_id="$(jq -er '.head_repo_id' <<<"$live_pr" 2>/dev/null)" ||
+             ! live_base_sha="$(jq -er '.base_sha' <<<"$live_pr" 2>/dev/null)" ||
+             ! live_base_ref="$(jq -er '.base_ref' <<<"$live_pr" 2>/dev/null)" ||
+             ! live_base_repo="$(jq -er '.base_repo' <<<"$live_pr" 2>/dev/null)" ||
+             ! live_base_repo_id="$(jq -er '.base_repo_id' <<<"$live_pr" 2>/dev/null)"; then
+            echo "::error::CLA preflight returned incomplete pull request metadata; refusing to run."
             exit 1
+          fi
+          if [[ "$live_state" != "open" ]] ||
+             ! [[ "$live_head_sha" =~ ^[0-9a-fA-F]{40}$ ]] ||
+             [[ -z "$live_head_ref" || -z "$live_head_repo" ]] ||
+             ! [[ "$live_head_repo_id" =~ ^[1-9][0-9]*$ ]] ||
+             ! [[ "$live_base_sha" =~ ^[0-9a-fA-F]{40}$ ]] ||
+             [[ -z "$live_base_ref" || -z "$live_base_repo" ]] ||
+             ! [[ "$live_base_repo_id" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::CLA preflight found invalid or closed pull request metadata; refusing to run."
+            exit 1
+          fi
+          if [[ "$live_base_repo" != "$GH_REPO" || "$live_base_ref" != "main" ]]; then
+            echo "::error::CLA workflow only accepts open pull requests targeting this repository's main branch; refusing to run."
+            exit 1
+          fi
+          if [[ "$EVENT_NAME" == "pull_request_target" ]]; then
+            if [[ "$EVENT_HEAD_SHA" != "$live_head_sha" ||
+                  "$EVENT_HEAD_REF" != "$live_head_ref" ||
+                  "$EVENT_HEAD_REPO" != "$live_head_repo" ||
+                  "$EVENT_HEAD_REPO_ID" != "$live_head_repo_id" ||
+                  "$EVENT_BASE_SHA" != "$live_base_sha" ||
+                  "$EVENT_BASE_REF" != "$live_base_ref" ||
+                  "$EVENT_BASE_REPO" != "$live_base_repo" ||
+                  "$EVENT_BASE_REPO_ID" != "$live_base_repo_id" ]]; then
+              echo "::error::CLA preflight pull request metadata does not match the event payload; refusing to run."
+              exit 1
+            fi
           fi
           if ! commit_count="$(gh api "repos/${GH_REPO}/pulls/${PR_NUMBER}" --jq '.commits' 2>/dev/null)"; then
             echo "::error::CLA preflight could not read the pull request commit count; refusing to run."
