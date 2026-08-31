@@ -152,12 +152,12 @@ jobs:
       )
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Serialize signer events by repository, event class, PR, and finite
-    # sign/recheck class. This prevents a comment run from replacing a
-    # pending pull_request_target lifecycle validation. The merged-only lock
-    # has its own per-PR queue.
+    # Serialize every signer event by repository, event class, and PR. This
+    # prevents sign and recheck comments from overlapping while keeping
+    # issue_comment separate from pull_request_target lifecycle validation.
+    # The merged-only lock has its own per-PR queue.
     concurrency:
-      group: "cla-signatures-${{ github.repository }}-${{ github.event_name }}-${{ github.event.issue.number || github.event.pull_request.number }}-${{ github.event.comment.body == 'recheck' }}"
+      group: "cla-signatures-${{ github.repository }}-${{ github.event_name }}-${{ github.event.issue.number || github.event.pull_request.number }}"
       cancel-in-progress: false
     # Keep the token scoped to the GitHub API operations used by this job.
     permissions:
@@ -392,6 +392,11 @@ jobs:
           custom-pr-sign-comment: 'I have read the CLA Document and I hereby sign the CLA'
           required-base-ref: 'main'
           require-opener-as-author: 'true'
+          # Verified Manaflow org members. The maintained action applies
+          # these numeric exemptions only to authenticated live PR openers,
+          # never to commit metadata or comment authors.
+          # @austinywang (Austin Wang, 38676809); @azooz2003-bit (Abdulaziz Albahar, 67667005)
+          allowlist-ids: '38676809,67667005'
           # signatures live on the unprotected cla-signatures branch so required checks on main don't block the bot's signature commits
           branch: 'cla-signatures'
 
