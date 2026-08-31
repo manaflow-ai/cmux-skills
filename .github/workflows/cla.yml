@@ -32,7 +32,6 @@ jobs:
     # events instead of replacing the previous pending run.
     concurrency:
       group: cla-signatures
-      queue: max
       cancel-in-progress: false
     # Keep the token scoped to the GitHub API operations used by this job.
     permissions:
@@ -246,7 +245,6 @@ jobs:
     timeout-minutes: 10
     concurrency:
       group: cla-signatures
-      queue: max
       cancel-in-progress: false
     permissions:
       issues: write
