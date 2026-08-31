@@ -36,9 +36,10 @@ jobs:
       cancel-in-progress: false
     # Keep the token scoped to the GitHub API operations used by this job.
     permissions:
-      # Temporary exception: the archived action reruns a failed check after
-      # signing. Remove write when the maintained in-organization fork lands.
-      actions: write
+      # Read-only access is intentional. The archived action's branch-based
+      # rerun is disabled until an exact-head worker is deployed, so required-
+      # check recovery remains advisory.
+      actions: read
       contents: write
       issues: write
       # GitHub's pull_request_target token denied issue comments for fork PRs with
