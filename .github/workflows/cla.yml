@@ -179,7 +179,19 @@ jobs:
               echo "::error::CLA history guard could not read issue comments; refusing to run."
               exit 1
             fi
-            if ! jq -e 'type == "array" and all(.[]; ((.body | type) == "string" and (.user.login | type) == "string" and (.user.type | type) == "string" and (.user.id | type) == "number" and (.user.id | . > 0) and (.user.id | . == floor)))' <<<"$page_json" >/dev/null 2>&1; then
+            if ! jq -e '
+              def valid_comment:
+                ((.body | type) == "string" or (.body | type) == "null") and
+                (.user == null or (
+                  (.user | type) == "object" and
+                  (.user.login | type) == "string" and
+                  (.user.type | type) == "string" and
+                  (.user.id | type) == "number" and
+                  (.user.id | . > 0) and
+                  (.user.id | . == floor)
+                ));
+              type == "array" and all(.[]; valid_comment)
+            ' <<<"$page_json" >/dev/null 2>&1; then
               echo "::error::CLA history guard received malformed issue comments; refusing to run."
               exit 1
             fi
@@ -198,7 +210,19 @@ jobs:
               echo "::error::CLA history guard could not verify the 1000-comment limit; refusing to run."
               exit 1
             fi
-            if ! jq -e 'type == "array" and all(.[]; ((.body | type) == "string" and (.user.login | type) == "string" and (.user.type | type) == "string" and (.user.id | type) == "number" and (.user.id | . > 0) and (.user.id | . == floor)))' <<<"$overflow_json" >/dev/null 2>&1; then
+            if ! jq -e '
+              def valid_comment:
+                ((.body | type) == "string" or (.body | type) == "null") and
+                (.user == null or (
+                  (.user | type) == "object" and
+                  (.user.login | type) == "string" and
+                  (.user.type | type) == "string" and
+                  (.user.id | type) == "number" and
+                  (.user.id | . > 0) and
+                  (.user.id | . == floor)
+                ));
+              type == "array" and all(.[]; valid_comment)
+            ' <<<"$overflow_json" >/dev/null 2>&1; then
               echo "::error::CLA history guard received malformed overflow comments; refusing to run."
               exit 1
             fi
