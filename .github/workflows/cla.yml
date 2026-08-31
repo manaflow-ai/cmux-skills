@@ -28,8 +28,8 @@ jobs:
       )
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Signature updates share one file and must not race. Keep all pending
-    # events instead of replacing the previous pending run.
+    # Signature updates share one file and must not race. GitHub keeps one
+    # pending run for this group; do not cancel the active run.
     concurrency:
       group: cla-signatures
       cancel-in-progress: false
