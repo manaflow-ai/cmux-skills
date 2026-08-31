@@ -1,4 +1,4 @@
-name: "CLA Assistant"
+name: "CLA Assistant v2"
 on:
   issue_comment:
     types: [created]
@@ -11,7 +11,7 @@ permissions: {}
 
 jobs:
   CLAAssistant:
-    name: "CLA Assistant"
+    name: "CLA Assistant v2"
     if: >-
       (
         github.event_name == 'pull_request_target' &&
@@ -114,7 +114,7 @@ jobs:
             exit 1
           fi
           if (( commit_count > 100 )); then
-            echo "::error::CLA Assistant only evaluates the first 100 pull request commits. Squash this pull request to 100 or fewer commits before signing."
+            echo "::error::CLA Assistant v2 only evaluates the first 100 pull request commits. Squash this pull request to 100 or fewer commits before signing."
             exit 1
           fi
       - name: "Validate CLA comment command"
@@ -129,7 +129,7 @@ jobs:
             echo "::error::CLA workflow accepts only the exact recheck command or exact electronic signature phrase; refusing to run."
             exit 1
           fi
-      - name: "CLA Assistant"
+      - name: "CLA Assistant v2"
         # The action handles signing and status updates. Merged pull requests
         # are locked by the separate job because the archived action sends an
         # invalid lock request.
