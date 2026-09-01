@@ -206,13 +206,11 @@ collect_matching_check_ids() {
   # context matching is not. Prefer exact canonical filters so unrelated
   # check volume cannot block publication. The bounded unfiltered fallback
   # catches legacy case variants without failing only because it is truncated.
-  local pages='[]' last_count=0 page page_json overflow_json query_name found=false query_limit
+  local pages='[]' last_count=0 page page_json overflow_json query_name found=false
   local filtered_pages='[]'
   for query_name in "${CHECK_NAME}" "${CHECK_NAME,,}"; do
     pages='[]'
-    query_limit=${MAX_PAGES}
-    [[ "${found}" == true ]] && query_limit=1
-    for ((page=1; page<=query_limit; page++)); do
+    for ((page=1; page<=MAX_PAGES; page++)); do
       page_json="$(gh api --method GET "repos/${GH_REPO}/commits/${HEAD_SHA}/check-runs" \
         -f filter=all -f app_id="${CHECK_APP_ID}" -f check_name="${query_name}" \
         -f per_page="${PAGE_SIZE}" -f page="${page}" 2>/dev/null)" ||
@@ -232,7 +230,6 @@ collect_matching_check_ids() {
           (.app.id? == 15368) and .external_id == $external_id)] | length > 0' \
         <<<"${page_json}" >/dev/null; then
         found=true
-        break
       fi
       (( last_count < PAGE_SIZE )) && break
     done

@@ -1,4 +1,4 @@
-name: "CLA Assistant v2"
+name: "CLA Assistant v3"
 on:
   issue_comment:
     types: [created]
@@ -356,7 +356,7 @@ jobs:
             exit 1
           fi
           if (( commit_count > 1000 )); then
-            echo "::error::CLA Assistant v2 accepts at most 1000 pull request commits. Split this pull request to 1000 or fewer commits before signing."
+            echo "::error::CLA Assistant v3 accepts at most 1000 pull request commits. Split this pull request to 1000 or fewer commits before signing."
             exit 1
           fi
       - name: "Validate CLA comment command"
@@ -482,7 +482,7 @@ jobs:
             exit 1
           }
           printf 'head_sha=%s\nbase_sha=%s\n' "$(jq -er '.head.sha' <<<"${pr_json}")" "$(jq -er '.base.sha' <<<"${pr_json}")" >> "${GITHUB_OUTPUT}"
-      - name: "CLA Assistant v2"
+      - name: "CLA Assistant v3"
         if: ${{ success() }}
         # The action writes the signature ledger and issue comments. GitHub
         # creates the displayed job check run; the maintained source makes no
@@ -515,7 +515,7 @@ jobs:
           branch: 'cla-signatures'
 
   CLAResult:
-    name: "CLA Assistant v2"
+    name: "CLA Assistant v3"
     needs:
       - CLACommentGate
       - CLASignerPreflight
