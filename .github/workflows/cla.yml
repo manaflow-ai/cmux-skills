@@ -183,6 +183,7 @@ jobs:
     outputs:
       validated_head_sha: ${{ steps.cla-revision.outputs.head_sha || '' }}
       validated_base_sha: ${{ steps.cla-revision.outputs.base_sha || '' }}
+      policy_result: ${{ steps.cla-action.outcome || 'failure' }}
     # Keep a visible signer result when the unprivileged gate rejects a
     # case-insensitive expression match. The first step fails closed before
     # any privileged API operation.
@@ -483,6 +484,8 @@ jobs:
           }
           printf 'head_sha=%s\nbase_sha=%s\n' "$(jq -er '.head.sha' <<<"${pr_json}")" "$(jq -er '.base.sha' <<<"${pr_json}")" >> "${GITHUB_OUTPUT}"
       - name: "CLA Assistant v3"
+        id: cla-action
+        continue-on-error: false
         if: ${{ success() }}
         # The action writes the signature ledger and issue comments. GitHub
         # creates the displayed job check run; the maintained source makes no
@@ -566,6 +569,7 @@ jobs:
           PREFLIGHT_RESULT: ${{ needs.CLASignerPreflight.result }}
           SIGNER_AUTHORIZED: ${{ needs.CLASignerPreflight.outputs.signer_authorized || '' }}
           WRITER_RESULT: ${{ needs.CLAAssistant.result }}
+          WRITER_POLICY_RESULT: ${{ needs.CLAAssistant.outputs.policy_result || '' }}
         run: |
           set -euo pipefail
           fail() {
@@ -578,16 +582,16 @@ jobs:
                 "${COMMENT_BODY}" == "I have read the CLA Document and I hereby sign the CLA" ]]; then
             [[ "${PREFLIGHT_RESULT}" == "success" && "${SIGNER_AUTHORIZED}" == "true" ]] ||
               fail "The signing comment did not pass authenticated signer preflight."
-            [[ "${WRITER_RESULT}" == "success" ]] ||
-              fail "The CLA signer did not complete successfully."
+            [[ "${WRITER_RESULT}" == "success" && "${WRITER_POLICY_RESULT}" == "success" ]] ||
+              fail "The CLA signer did not report a successful policy result."
             exit 0
           fi
           if [[ "${EVENT_NAME}" == "issue_comment" &&
                 "${COMMENT_BODY}" == "recheck" ]]; then
             case "${COMMENT_ASSOCIATION}" in
               OWNER|MEMBER|COLLABORATOR)
-                [[ "${WRITER_RESULT}" == "success" ]] ||
-                  fail "The trusted CLA recheck did not complete successfully."
+                [[ "${WRITER_RESULT}" == "success" && "${WRITER_POLICY_RESULT}" == "success" ]] ||
+                  fail "The trusted CLA recheck did not report a successful policy result."
                 ;;
               *)
                 echo "::notice::Ignoring an untrusted CLA recheck; no privileged signer was started."
@@ -595,8 +599,8 @@ jobs:
             esac
             exit 0
           fi
-          [[ "${WRITER_RESULT}" == "success" ]] ||
-            fail "The CLA signer did not complete successfully."
+          [[ "${WRITER_RESULT}" == "success" && "${WRITER_POLICY_RESULT}" == "success" ]] ||
+            fail "The CLA signer did not report a successful policy result."
 
   LockMergedPullRequest:
     name: "Lock merged pull request"
@@ -841,5 +845,6 @@ jobs:
           SIGNER_HEAD_SHA: ${{ needs.CLASignerPreflight.outputs.head_sha || '' }}
           SIGNER_BASE_SHA: ${{ needs.CLASignerPreflight.outputs.base_sha || '' }}
           WRITER_RESULT: ${{ needs.CLAAssistant.result || '' }}
+          WRITER_POLICY_RESULT: ${{ needs.CLAAssistant.outputs.policy_result || '' }}
           WRITER_HEAD_SHA: ${{ needs.CLAAssistant.outputs.validated_head_sha || '' }}
         run: bash .github/scripts/refresh-cla-check.sh

@@ -161,9 +161,9 @@ esac
 # must not overwrite a newer head's check.
 policy_conclusion=success
 policy_reason='the maintained CLA writer validated the live pull request'
-if [[ "${WRITER_RESULT:-}" != success ]]; then
+if [[ "${WRITER_RESULT:-}" != success || "${WRITER_POLICY_RESULT:-}" != success ]]; then
   policy_conclusion=failure
-  policy_reason='the maintained CLA writer did not complete successfully'
+  policy_reason='the maintained CLA writer did not report a successful CLA policy result'
 fi
 if [[ -n "${WRITER_HEAD_SHA:-}" ]]; then
   is_sha "${WRITER_HEAD_SHA}" || no_refresh
