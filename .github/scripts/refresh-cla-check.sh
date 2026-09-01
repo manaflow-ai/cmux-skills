@@ -201,82 +201,117 @@ payload="$(jq -n \
     details_url:$details_url,external_id:$external_id,
     output:{title:$title,summary:$summary}}')"
 
-# Enumerate all matching check runs. The API check_name filter is case
-# sensitive, while branch protection context matching is not, so name matching
-# is case-folded locally. Bounded pagination and an overflow probe fail closed.
-pages='[]'
-last_count=0
-for ((page=1; page<=MAX_PAGES; page++)); do
-  page_json="$(gh api --method GET "repos/${GH_REPO}/commits/${HEAD_SHA}/check-runs" \
-    -f filter=all -f app_id="${CHECK_APP_ID}" -f per_page="${PAGE_SIZE}" -f page="${page}" 2>/dev/null)" ||
-    fail "Could not inspect check runs on page ${page}."
-  jq -e --arg sha "${HEAD_SHA}" '
-    type == "object" and (.total_count | type == "number" and floor == . and . >= 0 and . <= 1000) and
-    (.check_runs | type == "array" and length <= 100) and
-    all(.check_runs[]; (.id | type == "number" and floor == . and . > 0 and . <= 9007199254740991) and
-      (.name | type == "string") and
-      (.head_sha | type == "string" and ascii_downcase == ($sha | ascii_downcase)) and
-      (.app == null or (.app | type == "object" and (.id | type == "number" and . > 0))) )
-  ' <<<"${page_json}" >/dev/null || fail "GitHub returned malformed or unbounded check data on page ${page}."
-  pages="$(jq -c --argjson page "${page_json}" '. + [$page]' <<<"${pages}")"
-  last_count="$(jq -er '.check_runs | length' <<<"${page_json}")"
-  (( last_count < PAGE_SIZE )) && break
-done
-(( last_count < PAGE_SIZE )) || fail 'The check-run list exceeded the bounded page window.'
-overflow_json="$(gh api --method GET "repos/${GH_REPO}/commits/${HEAD_SHA}/check-runs" \
-  -f filter=all -f app_id="${CHECK_APP_ID}" -f per_page="${PAGE_SIZE}" -f page=$((MAX_PAGES + 1)) 2>/dev/null)" ||
-  fail 'Could not inspect the check-run overflow page.'
-jq -e '.check_runs | type == "array" and length == 0' <<<"${overflow_json}" >/dev/null ||
-  fail 'The check-run list is larger than the bounded safety limit.'
+collect_matching_check_ids() {
+  # The API check_name filter is case sensitive, while branch protection
+  # context matching is not. Enumerate every page and case-fold locally.
+  local pages='[]' last_count=0 page page_json overflow_json
+  for ((page=1; page<=MAX_PAGES; page++)); do
+    page_json="$(gh api --method GET "repos/${GH_REPO}/commits/${HEAD_SHA}/check-runs" \
+      -f filter=all -f app_id="${CHECK_APP_ID}" -f per_page="${PAGE_SIZE}" -f page="${page}" 2>/dev/null)" ||
+      fail "Could not inspect check runs on page ${page}."
+    jq -e --arg sha "${HEAD_SHA}" '
+      type == "object" and (.total_count | type == "number" and floor == . and . >= 0 and . <= 1000) and
+      (.check_runs | type == "array" and length <= 100) and
+      all(.check_runs[]; (.id | type == "number" and floor == . and . > 0 and . <= 9007199254740991) and
+        (.name | type == "string") and
+        (.head_sha | type == "string" and ascii_downcase == ($sha | ascii_downcase)) and
+        (.app == null or (.app | type == "object" and (.id | type == "number" and . > 0))) )
+    ' <<<"${page_json}" >/dev/null || fail "GitHub returned malformed or unbounded check data on page ${page}."
+    pages="$(jq -c --argjson page "${page_json}" '. + [$page]' <<<"${pages}")"
+    last_count="$(jq -er '.check_runs | length' <<<"${page_json}")"
+    (( last_count < PAGE_SIZE )) && break
+  done
+  (( last_count < PAGE_SIZE )) || fail 'The check-run list exceeded the bounded page window.'
+  overflow_json="$(gh api --method GET "repos/${GH_REPO}/commits/${HEAD_SHA}/check-runs" \
+    -f filter=all -f app_id="${CHECK_APP_ID}" -f per_page="${PAGE_SIZE}" -f page=$((MAX_PAGES + 1)) 2>/dev/null)" ||
+    fail 'Could not inspect the check-run overflow page.'
+  jq -e '.check_runs | type == "array" and length == 0' <<<"${overflow_json}" >/dev/null ||
+    fail 'The check-run list is larger than the bounded safety limit.'
+  existing_ids="$(jq -c \
+    --arg external_id "${external_id}" \
+    '[.[] | .check_runs[] | select((.name | ascii_downcase) == "cla assistant v3" and
+      (.app.id? == 15368) and .external_id == $external_id) | .id]' <<<"${pages}")"
+  match_count="$(jq -er 'length' <<<"${existing_ids}")"
+}
 
-existing_ids="$(jq -c \
-  --arg external_id "${external_id}" \
-  '[.[] | .check_runs[] | select((.name | ascii_downcase) == "cla assistant v3" and
-    (.app.id? == 15368) and .external_id == $external_id) | .id]' <<<"${pages}")"
-match_count="$(jq -er 'length' <<<"${existing_ids}")"
-(( match_count <= 1 )) || fail 'More than one exact-head CLA v3 check exists for this generation.'
+# Re-read the live PR and, for comment events, the exact comment immediately
+# before every Checks API mutation. This protects against a force-push, close,
+# comment edit, or author change during the bounded list scan.
+validate_final_binding() {
+  local final_pr_json final_comment_json
+  final_pr_json="$(gh api "repos/${GH_REPO}/pulls/${PR_NUMBER}" 2>/dev/null)" || no_refresh
+  jq -e --arg repo "${GH_REPO}" --argjson number "${PR_NUMBER}" --arg sha "${HEAD_SHA}" \
+    --arg base_sha "${BASE_SHA}" '
+    .number == $number and .state == "open" and .merged_at == null and
+    .base.ref == "main" and ((.base.repo.full_name | ascii_downcase) == ($repo | ascii_downcase)) and
+    .base.sha == $base_sha and .head.sha == $sha
+  ' <<<"${final_pr_json}" >/dev/null || no_refresh
+  if [[ "${event_kind}" != lifecycle ]]; then
+    final_comment_json="$(gh api "${comment_endpoint}" 2>/dev/null)" || no_refresh
+    jq -e \
+      --arg id "${COMMENT_ID}" --arg body "${COMMENT_BODY}" --arg uid "${COMMENT_USER_ID}" \
+      --arg issue_url "${expected_issue_url}" \
+      '(.id | type == "number" and tostring == $id) and .body == $body and
+       (.user.id | type == "number" and tostring == $uid) and .user.type == "User" and
+       (.created_at | type == "string" and length > 0) and .updated_at == .created_at and
+       .issue_url == $issue_url' <<<"${final_comment_json}" >/dev/null || no_refresh
+    validate_recheck_authorization "${final_comment_json}"
+  fi
+}
 
-# Re-read the live PR immediately before the only state-changing Checks API
-# call. A force-push or close during pagination must never publish a result for
-# a different head or a closed pull request.
-final_pr_json="$(gh api "repos/${GH_REPO}/pulls/${PR_NUMBER}" 2>/dev/null)" || no_refresh
-jq -e --arg repo "${GH_REPO}" --argjson number "${PR_NUMBER}" --arg sha "${HEAD_SHA}" \
-  --arg base_sha "${BASE_SHA}" '
-  .number == $number and .state == "open" and .merged_at == null and
-  .base.ref == "main" and ((.base.repo.full_name | ascii_downcase) == ($repo | ascii_downcase)) and
-  .base.sha == $base_sha and .head.sha == $sha
-' <<<"${final_pr_json}" >/dev/null || no_refresh
-if [[ "${event_kind}" != lifecycle ]]; then
-  comment_json="$(gh api "${comment_endpoint}" 2>/dev/null)" || no_refresh
-  jq -e \
-    --arg id "${COMMENT_ID}" --arg body "${COMMENT_BODY}" --arg uid "${COMMENT_USER_ID}" \
-    --arg issue_url "${expected_issue_url}" \
-    '(.id | type == "number" and tostring == $id) and .body == $body and
-     (.user.id | type == "number" and tostring == $uid) and .user.type == "User" and
-     (.created_at | type == "string" and length > 0) and .updated_at == .created_at and
-     .issue_url == $issue_url' <<<"${comment_json}" >/dev/null || no_refresh
-  validate_recheck_authorization "${comment_json}"
-fi
+validate_check_response() {
+  jq -e --arg sha "${HEAD_SHA}" --arg conclusion "${policy_conclusion}" --arg external_id "${external_id}" \
+    --arg name "${CHECK_NAME}" \
+    '(.id | type == "number" and . > 0) and .name == $name and
+     (.head_sha | type == "string" and ascii_downcase == ($sha | ascii_downcase)) and
+     .status == "completed" and .conclusion == $conclusion and .external_id == $external_id and
+     .app.id == 15368' <<<"${1}" >/dev/null || fail 'GitHub did not confirm the expected CLA check.'
+}
 
-if (( match_count == 1 )); then
-  check_id="$(jq -er '.[0]' <<<"${existing_ids}")"
+patch_check() {
+  local check_id="$1" patch_response
   is_id "${check_id}" || fail 'The existing CLA check ID is invalid.'
-  response="$(jq 'del(.head_sha)' <<<"${payload}")"
-  response="$(gh api --method PATCH "repos/${GH_REPO}/check-runs/${check_id}" \
+  validate_final_binding
+  patch_response="$(gh api --method PATCH "repos/${GH_REPO}/check-runs/${check_id}" \
     --header 'Accept: application/vnd.github+json' --header 'X-GitHub-Api-Version: 2022-11-28' \
-    --input - <<<"${response}" 2>/dev/null)" || fail 'Could not update the exact-head CLA check.'
-  operation=updated
-else
+    --input - <<<"${patch_payload}" 2>/dev/null)" || fail 'Could not update the exact-head CLA check.'
+  validate_check_response "${patch_response}"
+}
+
+collect_matching_check_ids
+operation=updated
+if (( match_count == 0 )); then
+  validate_final_binding
   response="$(gh api --method POST "repos/${GH_REPO}/check-runs" \
     --header 'Accept: application/vnd.github+json' --header 'X-GitHub-Api-Version: 2022-11-28' \
     --input - <<<"${payload}" 2>/dev/null)" || fail 'Could not create the exact-head CLA check.'
+  validate_check_response "${response}"
   operation=created
+else
+  patch_payload="$(jq 'del(.head_sha)' <<<"${payload}")"
+  # GitHub does not enforce external_id uniqueness. Concurrent event-unique
+  # workers can therefore leave duplicate exact-head runs; patch every match
+  # to the same policy result so duplicates remain harmless and recoverable.
+  while IFS= read -r check_id; do
+    patch_check "${check_id}"
+  done < <(jq -r '.[]' <<<"${existing_ids}")
+  if (( match_count > 1 )); then
+    echo "::notice::Reconciled ${match_count} duplicate exact-head CLA checks."
+  fi
 fi
-jq -e --arg sha "${HEAD_SHA}" --arg conclusion "${policy_conclusion}" --arg external_id "${external_id}" \
-  --arg name "${CHECK_NAME}" \
-  '(.id | type == "number" and . > 0) and .name == $name and
-   (.head_sha | type == "string" and ascii_downcase == ($sha | ascii_downcase)) and
-   .status == "completed" and .conclusion == $conclusion and .external_id == $external_id and
-   .app.id == 15368' <<<"${response}" >/dev/null || fail 'GitHub did not confirm the expected CLA check.'
-printf 'published=true\nno_refresh=false\nconclusion=%s\nhead_sha=%s\n' "${policy_conclusion}" "${HEAD_SHA}" >> "${GITHUB_OUTPUT:?}"
+
+# A concurrent POST can finish after the initial scan. Re-enumerate once and
+# reconcile any duplicates created by that race. Future events repeat the same
+# idempotent repair if GitHub's list is eventually consistent.
+collect_matching_check_ids
+if (( match_count > 1 )); then
+  patch_payload="$(jq 'del(.head_sha)' <<<"${payload}")"
+  while IFS= read -r check_id; do
+    patch_check "${check_id}"
+  done < <(jq -r '.[]' <<<"${existing_ids}")
+  operation=updated
+  echo "::notice::Reconciled ${match_count} concurrent exact-head CLA checks."
+fi
+printf 'published=true\nno_refresh=false\nconclusion=%s\nhead_sha=%s\noperation=%s\n' \
+  "${policy_conclusion}" "${HEAD_SHA}" "${operation}" >> "${GITHUB_OUTPUT:?}"
 echo "CLA v3 check ${operation} for PR ${PR_NUMBER}, head ${HEAD_SHA}, conclusion ${policy_conclusion}."
