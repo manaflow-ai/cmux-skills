@@ -203,34 +203,79 @@ payload="$(jq -n \
 
 collect_matching_check_ids() {
   # The API check_name filter is case sensitive, while branch protection
-  # context matching is not. Enumerate every page and case-fold locally.
-  local pages='[]' last_count=0 page page_json overflow_json
-  for ((page=1; page<=MAX_PAGES; page++)); do
-    page_json="$(gh api --method GET "repos/${GH_REPO}/commits/${HEAD_SHA}/check-runs" \
-      -f filter=all -f app_id="${CHECK_APP_ID}" -f per_page="${PAGE_SIZE}" -f page="${page}" 2>/dev/null)" ||
-      fail "Could not inspect check runs on page ${page}."
-    jq -e --arg sha "${HEAD_SHA}" '
-      type == "object" and (.total_count | type == "number" and floor == . and . >= 0 and . <= 1000) and
-      (.check_runs | type == "array" and length <= 100) and
-      all(.check_runs[]; (.id | type == "number" and floor == . and . > 0 and . <= 9007199254740991) and
-        (.name | type == "string") and
-        (.head_sha | type == "string" and ascii_downcase == ($sha | ascii_downcase)) and
-        (.app == null or (.app | type == "object" and (.id | type == "number" and . > 0))) )
-    ' <<<"${page_json}" >/dev/null || fail "GitHub returned malformed or unbounded check data on page ${page}."
-    pages="$(jq -c --argjson page "${page_json}" '. + [$page]' <<<"${pages}")"
-    last_count="$(jq -er '.check_runs | length' <<<"${page_json}")"
-    (( last_count < PAGE_SIZE )) && break
+  # context matching is not. Prefer exact canonical filters so unrelated
+  # check volume cannot block publication. The bounded unfiltered fallback
+  # catches legacy case variants without failing only because it is truncated.
+  local pages='[]' last_count=0 page page_json overflow_json query_name found=false query_limit
+  local filtered_pages='[]'
+  for query_name in "${CHECK_NAME}" "${CHECK_NAME,,}"; do
+    pages='[]'
+    query_limit=${MAX_PAGES}
+    [[ "${found}" == true ]] && query_limit=1
+    for ((page=1; page<=query_limit; page++)); do
+      page_json="$(gh api --method GET "repos/${GH_REPO}/commits/${HEAD_SHA}/check-runs" \
+        -f filter=all -f app_id="${CHECK_APP_ID}" -f check_name="${query_name}" \
+        -f per_page="${PAGE_SIZE}" -f page="${page}" 2>/dev/null)" ||
+        fail "Could not inspect filtered check runs on page ${page}."
+      jq -e --arg sha "${HEAD_SHA}" '
+        type == "object" and (.total_count | type == "number" and floor == . and . >= 0 and . <= 9007199254740991) and
+        (.check_runs | type == "array" and length <= 100) and
+        all(.check_runs[]; (.id | type == "number" and floor == . and . > 0 and . <= 9007199254740991) and
+          (.name | type == "string") and
+          (.head_sha | type == "string" and ascii_downcase == ($sha | ascii_downcase)) and
+          (.app == null or (.app | type == "object" and (.id | type == "number" and . > 0))) )
+      ' <<<"${page_json}" >/dev/null || fail "GitHub returned malformed filtered check data on page ${page}."
+      pages="$(jq -c --argjson page "${page_json}" '. + [$page]' <<<"${pages}")"
+      last_count="$(jq -er '.check_runs | length' <<<"${page_json}")"
+      if jq -e --arg external_id "${external_id}" \
+        '[.check_runs[] | select((.name | ascii_downcase) == "cla assistant v3" and
+          (.app.id? == 15368) and .external_id == $external_id)] | length > 0' \
+        <<<"${page_json}" >/dev/null; then
+        found=true
+        break
+      fi
+      (( last_count < PAGE_SIZE )) && break
+    done
+    filtered_pages="$(jq -c --argjson pages "${pages}" '. + $pages' <<<"${filtered_pages}")"
   done
-  (( last_count < PAGE_SIZE )) || fail 'The check-run list exceeded the bounded page window.'
-  overflow_json="$(gh api --method GET "repos/${GH_REPO}/commits/${HEAD_SHA}/check-runs" \
-    -f filter=all -f app_id="${CHECK_APP_ID}" -f per_page="${PAGE_SIZE}" -f page=$((MAX_PAGES + 1)) 2>/dev/null)" ||
-    fail 'Could not inspect the check-run overflow page.'
-  jq -e '.check_runs | type == "array" and length == 0' <<<"${overflow_json}" >/dev/null ||
-    fail 'The check-run list is larger than the bounded safety limit.'
+
+  pages="${filtered_pages}"
+  if [[ "${found}" != true ]]; then
+    pages='[]'
+    last_count=0
+    for ((page=1; page<=MAX_PAGES; page++)); do
+      page_json="$(gh api --method GET "repos/${GH_REPO}/commits/${HEAD_SHA}/check-runs" \
+        -f filter=all -f app_id="${CHECK_APP_ID}" -f per_page="${PAGE_SIZE}" -f page="${page}" 2>/dev/null)" ||
+        fail "Could not inspect check runs on page ${page}."
+      jq -e --arg sha "${HEAD_SHA}" '
+        type == "object" and (.total_count | type == "number" and floor == . and . >= 0 and . <= 9007199254740991) and
+        (.check_runs | type == "array" and length <= 100) and
+        all(.check_runs[]; (.id | type == "number" and floor == . and . > 0 and . <= 9007199254740991) and
+          (.name | type == "string") and
+          (.head_sha | type == "string" and ascii_downcase == ($sha | ascii_downcase)) and
+          (.app == null or (.app | type == "object" and (.id | type == "number" and . > 0))) )
+      ' <<<"${page_json}" >/dev/null || fail "GitHub returned malformed check data on page ${page}."
+      pages="$(jq -c --argjson page "${page_json}" '. + [$page]' <<<"${pages}")"
+      last_count="$(jq -er '.check_runs | length' <<<"${page_json}")"
+      (( last_count < PAGE_SIZE )) && break
+    done
+    if (( last_count == PAGE_SIZE )); then
+      overflow_json="$(gh api --method GET "repos/${GH_REPO}/commits/${HEAD_SHA}/check-runs" \
+        -f filter=all -f app_id="${CHECK_APP_ID}" -f per_page="${PAGE_SIZE}" -f page=$((MAX_PAGES + 1)) 2>/dev/null)" ||
+        fail 'Could not inspect the check-run overflow page.'
+      jq -e --arg sha "${HEAD_SHA}" '
+        type == "object" and (.total_count | type == "number" and floor == . and . >= 0 and . <= 9007199254740991) and
+        (.check_runs | type == "array" and length <= 100) and
+        all(.check_runs[]; (.id | type == "number" and . > 0) and
+          (.name | type == "string") and (.head_sha | type == "string" and ascii_downcase == ($sha | ascii_downcase)))
+      ' <<<"${overflow_json}" >/dev/null || fail 'GitHub returned malformed check data on the overflow page.'
+      echo '::notice::The broad CLA check scan reached its bounded page limit; a new exact-head check may be created.'
+    fi
+  fi
   existing_ids="$(jq -c \
     --arg external_id "${external_id}" \
     '[.[] | .check_runs[] | select((.name | ascii_downcase) == "cla assistant v3" and
-      (.app.id? == 15368) and .external_id == $external_id) | .id]' <<<"${pages}")"
+      (.app.id? == 15368) and .external_id == $external_id) | .id] | unique' <<<"${pages}")"
   match_count="$(jq -er 'length' <<<"${existing_ids}")"
 }
 
