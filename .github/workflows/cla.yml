@@ -525,6 +525,8 @@ jobs:
     # refreshes the PR check after a signature comment.
     if: >-
       always() &&
+      needs.CLACommentGate.result == 'success' &&
+      needs.CLACommentGate.outputs.admitted == 'true' &&
       (
         (
           github.event_name == 'pull_request_target' &&
