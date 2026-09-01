@@ -9,6 +9,11 @@ on:
 # Jobs declare only the permissions they need.
 permissions: {}
 
+# Change this marker only when the CLA policy or maintained action changes.
+# It keeps rerun workers tied to a stable policy generation.
+env:
+  CLA_GENERATION: 'v2.2-action-fc608ba7106e7029d981d487d7bad28a64325956'
+
 jobs:
   CLACommentGate:
     name: "Validate CLA trigger"
@@ -380,11 +385,11 @@ jobs:
         # creates the displayed job check run; the maintained source makes no
         # commit-status API call, so statuses:write is intentionally omitted.
         # Merged pull requests are locked by the separate job.
-        uses: manaflow-ai/cla-github-action@bc206ed9b52ad0b0cbe85244ce522e5e9b65c10e # final reviewed maintained fork runtime+dist, edited-comment and head-binding fixes
+        uses: manaflow-ai/cla-github-action@fc608ba7106e7029d981d487d7bad28a64325956 # reviewed maintained fork runtime+dist
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          path-to-signatures: 'signatures/version1/cla.json'
+          path-to-signatures: 'signatures/version2/cla.json'
           path-to-document: 'https://github.com/manaflow-ai/cmux-skills/blob/${{ github.workflow_sha }}/CLA.md'
           # Locking is handled by the merged-only job below, which supplies a
           # valid reason and verifies the resulting lock state.
