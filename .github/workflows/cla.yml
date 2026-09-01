@@ -12,7 +12,7 @@ permissions: {}
 # Change this marker only when the CLA policy or maintained action changes.
 # It keeps rerun workers tied to a stable policy generation.
 env:
-  CLA_GENERATION: 'v2.2-action-482864f7296623ba4e8ddb7d6bc1836635306eb1'
+  CLA_GENERATION: 'v2.2-action-537cbad33cd5e55bd3ef9bcf33d26a965da4fe4a'
 
 jobs:
   CLACommentGate:
@@ -147,7 +147,7 @@ jobs:
     steps:
       - name: "Authenticate current CLA signer"
         id: preflight
-        uses: manaflow-ai/cla-github-action@482864f7296623ba4e8ddb7d6bc1836635306eb1 # signer-preflight requires the merged maintained action
+        uses: manaflow-ai/cla-github-action@537cbad33cd5e55bd3ef9bcf33d26a965da4fe4a # signer-preflight requires the merged maintained action
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -440,7 +440,7 @@ jobs:
         # creates the displayed job check run; the maintained source makes no
         # commit-status API call, so statuses:write is intentionally omitted.
         # Merged pull requests are locked by the separate job.
-        uses: manaflow-ai/cla-github-action@482864f7296623ba4e8ddb7d6bc1836635306eb1 # reviewed maintained fork runtime+dist
+        uses: manaflow-ai/cla-github-action@537cbad33cd5e55bd3ef9bcf33d26a965da4fe4a # reviewed maintained fork runtime+dist
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
