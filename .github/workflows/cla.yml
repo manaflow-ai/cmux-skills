@@ -12,7 +12,7 @@ permissions: {}
 # Change this marker only when the CLA policy or maintained action changes.
 # It keeps rerun workers tied to a stable policy generation.
 env:
-  CLA_GENERATION: 'v2.2-action-fc608ba7106e7029d981d487d7bad28a64325956'
+  CLA_GENERATION: 'v2.2-action-0502e16018c7c71dc7647e0d41d056a11903941a'
 
 jobs:
   CLACommentGate:
@@ -120,14 +120,56 @@ jobs:
             exit 1
           fi
 
-  CLAAssistant:
-    name: "CLA Assistant v2"
+  CLASignerPreflight:
+    name: "CLA signer preflight"
     needs: CLACommentGate
+    # Authenticate the exact current signing comment in a separate read-only
+    # job. The write-capable signer never receives a token for an unadmitted
+    # or unauthenticated comment.
+    if: >-
+      always() &&
+      needs.CLACommentGate.result == 'success' &&
+      needs.CLACommentGate.outputs.admitted == 'true' &&
+      github.event_name == 'issue_comment' &&
+      github.event.action == 'created' &&
+      github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    outputs:
+      signer_authorized: ${{ steps.preflight.outputs.signer_authorized }}
+      opener_not_in_commits: ${{ steps.preflight.outputs.opener_not_in_commits }}
+    steps:
+      - name: "Authenticate current CLA signer"
+        id: preflight
+        uses: manaflow-ai/cla-github-action@0502e16018c7c71dc7647e0d41d056a11903941a # signer-preflight requires the merged maintained action
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          mode: 'signer-preflight'
+          path-to-signatures: 'signatures/version2/cla.json'
+          path-to-document: 'https://github.com/manaflow-ai/cmux-skills/blob/${{ github.workflow_sha }}/CLA.md'
+          custom-pr-sign-comment: 'I have read the CLA Document and I hereby sign the CLA'
+          required-base-ref: 'main'
+          require-opener-as-author: 'true'
+          allowlist-ids: '38676809,67667005'
+
+
+  CLAAssistant:
+    name: "CLA Signer"
+    needs:
+      - CLACommentGate
+      - CLASignerPreflight
     # Keep a visible signer result when the unprivileged gate rejects a
     # case-insensitive expression match. The first step fails closed before
     # any privileged API operation.
     if: >-
       always() &&
+      needs.CLACommentGate.result == 'success' &&
+      needs.CLACommentGate.outputs.admitted == 'true' &&
       (
         (
           github.event_name == 'pull_request_target' &&
@@ -140,20 +182,29 @@ jobs:
         ) ||
         (
           github.event_name == 'issue_comment' &&
+          github.event.action == 'created' &&
           github.event.issue.pull_request &&
           github.event.issue.state == 'open' &&
           github.event.comment.user.type == 'User' &&
           github.event.comment.user.id != null &&
           github.event.comment.user.id > 0 &&
           (
-            github.event.comment.body == 'recheck' ||
-            github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA'
+            (
+              github.event.comment.body == 'recheck' &&
+              (
+                github.event.comment.user.id == github.event.issue.user.id ||
+                github.event.comment.author_association == 'OWNER' ||
+                github.event.comment.author_association == 'MEMBER' ||
+                github.event.comment.author_association == 'COLLABORATOR'
+              )
+            ) ||
+            (
+              github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA' &&
+              needs.CLASignerPreflight.result == 'success' &&
+              needs.CLASignerPreflight.outputs.signer_authorized == 'true'
+            )
           )
         )
-      ) &&
-      (
-        needs.CLACommentGate.result != 'success' ||
-        needs.CLACommentGate.outputs.admitted == 'true'
       )
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -385,7 +436,7 @@ jobs:
         # creates the displayed job check run; the maintained source makes no
         # commit-status API call, so statuses:write is intentionally omitted.
         # Merged pull requests are locked by the separate job.
-        uses: manaflow-ai/cla-github-action@fc608ba7106e7029d981d487d7bad28a64325956 # reviewed maintained fork runtime+dist
+        uses: manaflow-ai/cla-github-action@0502e16018c7c71dc7647e0d41d056a11903941a # reviewed maintained fork runtime+dist
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -404,6 +455,87 @@ jobs:
           allowlist-ids: '38676809,67667005'
           # signatures live on the unprotected cla-signatures branch so required checks on main don't block the bot's signature commits
           branch: 'cla-signatures'
+
+  CLAResult:
+    name: "CLA Assistant v2"
+    needs:
+      - CLACommentGate
+      - CLASignerPreflight
+      - CLAAssistant
+    # Issue-comment workflows run on the default branch SHA, not the PR head.
+    # This result remains advisory until a trusted exact-head rerun worker
+    # refreshes the PR check after a signature comment.
+    if: >-
+      always() &&
+      (
+        (
+          github.event_name == 'pull_request_target' &&
+          (
+            github.event.action == 'opened' ||
+            github.event.action == 'reopened' ||
+            github.event.action == 'synchronize' ||
+            github.event.action == 'edited'
+          )
+        ) ||
+        (
+          github.event_name == 'issue_comment' &&
+          github.event.action == 'created' &&
+          github.event.issue.pull_request &&
+          github.event.issue.state == 'open' &&
+          github.event.comment.user.type == 'User' &&
+          github.event.comment.user.id != null &&
+          github.event.comment.user.id > 0 &&
+          (
+            github.event.comment.body == 'recheck' ||
+            github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA'
+          )
+        )
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: "Publish CLA result"
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          COMMENT_BODY: ${{ github.event.comment.body || '' }}
+          COMMENT_ASSOCIATION: ${{ github.event.comment.author_association || '' }}
+          GATE_RESULT: ${{ needs.CLACommentGate.result }}
+          GATE_ADMITTED: ${{ needs.CLACommentGate.outputs.admitted || '' }}
+          PREFLIGHT_RESULT: ${{ needs.CLASignerPreflight.result }}
+          SIGNER_AUTHORIZED: ${{ needs.CLASignerPreflight.outputs.signer_authorized || '' }}
+          WRITER_RESULT: ${{ needs.CLAAssistant.result }}
+        run: |
+          set -euo pipefail
+          fail() {
+            echo "::error::$1"
+            exit 1
+          }
+          [[ "${GATE_RESULT}" == "success" && "${GATE_ADMITTED}" == "true" ]] ||
+            fail "The CLA trigger was not admitted."
+          if [[ "${EVENT_NAME}" == "issue_comment" &&
+                "${COMMENT_BODY}" == "I have read the CLA Document and I hereby sign the CLA" ]]; then
+            [[ "${PREFLIGHT_RESULT}" == "success" && "${SIGNER_AUTHORIZED}" == "true" ]] ||
+              fail "The signing comment did not pass authenticated signer preflight."
+            [[ "${WRITER_RESULT}" == "success" ]] ||
+              fail "The CLA signer did not complete successfully."
+            exit 0
+          fi
+          if [[ "${EVENT_NAME}" == "issue_comment" &&
+                "${COMMENT_BODY}" == "recheck" ]]; then
+            case "${COMMENT_ASSOCIATION}" in
+              OWNER|MEMBER|COLLABORATOR)
+                [[ "${WRITER_RESULT}" == "success" ]] ||
+                  fail "The trusted CLA recheck did not complete successfully."
+                ;;
+              *)
+                echo "::notice::Ignoring an untrusted CLA recheck; no privileged signer was started."
+                ;;
+            esac
+            exit 0
+          fi
+          [[ "${WRITER_RESULT}" == "success" ]] ||
+            fail "The CLA signer did not complete successfully."
 
   LockMergedPullRequest:
     name: "Lock merged pull request"
