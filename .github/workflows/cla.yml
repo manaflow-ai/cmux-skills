@@ -445,7 +445,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           path-to-signatures: 'signatures/version2/cla.json'
-          # Bind this privileged write to the exact head authenticated by the read-only preflight.
+          # Bind this privileged write to the exact head and base authenticated by the read-only preflight.
           expected-head-sha: ${{ needs.CLASignerPreflight.outputs.head_sha }}
           expected-base-sha: ${{ needs.CLASignerPreflight.outputs.base_sha }}
           path-to-document: 'https://github.com/manaflow-ai/cmux-skills/blob/${{ github.workflow_sha }}/CLA.md'
