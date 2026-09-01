@@ -160,6 +160,15 @@ jobs:
       comment_created_at: ${{ steps.preflight.outputs.comment_created_at }}
       comment_author_id: ${{ steps.preflight.outputs.comment_author_id }}
     steps:
+      - name: "Require GitHub-hosted runner"
+        env:
+          RUNNER_ENVIRONMENT: "${{ runner.environment || '' }}"
+        run: |
+          set -euo pipefail
+          if [[ "${RUNNER_ENVIRONMENT}" != "github-hosted" ]]; then
+            echo "::error::CLA policy jobs require a GitHub-hosted runner; refusing to use a self-hosted runner."
+            exit 1
+          fi
       - name: "Authenticate current CLA signer"
         id: preflight
         uses: manaflow-ai/cla-github-action@212a0f2dd659b24b48a30ba35966e06dc41736af # signer-preflight and cla_passed output
@@ -251,6 +260,15 @@ jobs:
       # issue comments and ledger commits use the narrowly scoped permissions above.
       pull-requests: read
     steps:
+      - name: "Require GitHub-hosted runner"
+        env:
+          RUNNER_ENVIRONMENT: "${{ runner.environment || '' }}"
+        run: |
+          set -euo pipefail
+          if [[ "${RUNNER_ENVIRONMENT}" != "github-hosted" ]]; then
+            echo "::error::CLA policy jobs require a GitHub-hosted runner; refusing to use a self-hosted runner."
+            exit 1
+          fi
       - name: "Require successful CLA admission"
         if: ${{ always() }}
         env:
@@ -622,6 +640,15 @@ jobs:
       issues: write
       pull-requests: read
     steps:
+      - name: "Require GitHub-hosted runner"
+        env:
+          RUNNER_ENVIRONMENT: "${{ runner.environment || '' }}"
+        run: |
+          set -euo pipefail
+          if [[ "${RUNNER_ENVIRONMENT}" != "github-hosted" ]]; then
+            echo "::error::CLA policy jobs require a GitHub-hosted runner; refusing to use a self-hosted runner."
+            exit 1
+          fi
       - name: "Lock merged pull request"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -795,6 +822,15 @@ jobs:
       issues: read
       pull-requests: read
     steps:
+      - name: "Require GitHub-hosted runner"
+        env:
+          RUNNER_ENVIRONMENT: "${{ runner.environment || '' }}"
+        run: |
+          set -euo pipefail
+          if [[ "${RUNNER_ENVIRONMENT}" != "github-hosted" ]]; then
+            echo "::error::CLA policy jobs require a GitHub-hosted runner; refusing to use a self-hosted runner."
+            exit 1
+          fi
       - name: "Checkout trusted CLA refresh worker"
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
