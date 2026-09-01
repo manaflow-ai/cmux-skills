@@ -12,7 +12,7 @@ permissions: {}
 # Change this marker only when the CLA policy or maintained action changes.
 # It keeps exact-head workers tied to a stable policy generation.
 env:
-  CLA_GENERATION: 'v2.2-action-b4d3c4fab86d21e7775c63522d4b39b3724ea4bf'
+  CLA_GENERATION: 'v2.2-action-212a0f2dd659b24b48a30ba35966e06dc41736af'
 
 jobs:
   CLACommentGate:
@@ -162,7 +162,7 @@ jobs:
     steps:
       - name: "Authenticate current CLA signer"
         id: preflight
-        uses: manaflow-ai/cla-github-action@b4d3c4fab86d21e7775c63522d4b39b3724ea4bf # signer-preflight requires the merged maintained action
+        uses: manaflow-ai/cla-github-action@212a0f2dd659b24b48a30ba35966e06dc41736af # signer-preflight and cla_passed output
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -183,7 +183,10 @@ jobs:
     outputs:
       validated_head_sha: ${{ steps.cla-revision.outputs.head_sha || '' }}
       validated_base_sha: ${{ steps.cla-revision.outputs.base_sha || '' }}
-      policy_result: ${{ steps.cla-action.outcome || 'failure' }}
+      # The maintained action sets cla_passed only after all signatures are
+      # valid and its final bot comment succeeds. Keep a false default for
+      # action errors and skipped paths.
+      policy_result: ${{ steps.cla-action.outputs.cla_passed || 'false' }}
     # Keep a visible signer result when the unprivileged gate rejects a
     # case-insensitive expression match. The first step fails closed before
     # any privileged API operation.
@@ -491,7 +494,7 @@ jobs:
         # creates the displayed job check run; the maintained source makes no
         # commit-status API call, so statuses:write is intentionally omitted.
         # Merged pull requests are locked by the separate job.
-        uses: manaflow-ai/cla-github-action@b4d3c4fab86d21e7775c63522d4b39b3724ea4bf # reviewed maintained fork runtime+dist
+        uses: manaflow-ai/cla-github-action@212a0f2dd659b24b48a30ba35966e06dc41736af # PR9 cla_passed output, immutable merged action
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -582,7 +585,7 @@ jobs:
                 "${COMMENT_BODY}" == "I have read the CLA Document and I hereby sign the CLA" ]]; then
             [[ "${PREFLIGHT_RESULT}" == "success" && "${SIGNER_AUTHORIZED}" == "true" ]] ||
               fail "The signing comment did not pass authenticated signer preflight."
-            [[ "${WRITER_RESULT}" == "success" && "${WRITER_POLICY_RESULT}" == "success" ]] ||
+            [[ "${WRITER_RESULT}" == "success" && "${WRITER_POLICY_RESULT}" == "true" ]] ||
               fail "The CLA signer did not report a successful policy result."
             exit 0
           fi
@@ -590,7 +593,7 @@ jobs:
                 "${COMMENT_BODY}" == "recheck" ]]; then
             case "${COMMENT_ASSOCIATION}" in
               OWNER|MEMBER|COLLABORATOR)
-                [[ "${WRITER_RESULT}" == "success" && "${WRITER_POLICY_RESULT}" == "success" ]] ||
+                [[ "${WRITER_RESULT}" == "success" && "${WRITER_POLICY_RESULT}" == "true" ]] ||
                   fail "The trusted CLA recheck did not report a successful policy result."
                 ;;
               *)
@@ -599,7 +602,7 @@ jobs:
             esac
             exit 0
           fi
-          [[ "${WRITER_RESULT}" == "success" && "${WRITER_POLICY_RESULT}" == "success" ]] ||
+          [[ "${WRITER_RESULT}" == "success" && "${WRITER_POLICY_RESULT}" == "true" ]] ||
             fail "The CLA signer did not report a successful policy result."
 
   LockMergedPullRequest:
@@ -816,7 +819,7 @@ jobs:
           EXPECTED_REPO: 'manaflow-ai/cmux-skills'
           REPOSITORY_ID: ${{ github.repository_id || '' }}
           WORKFLOW_SHA: ${{ github.workflow_sha || '' }}
-          EXPECTED_GENERATION: 'v2.2-action-b4d3c4fab86d21e7775c63522d4b39b3724ea4bf'
+          EXPECTED_GENERATION: 'v2.2-action-212a0f2dd659b24b48a30ba35966e06dc41736af'
           CLA_GENERATION: ${{ env.CLA_GENERATION }}
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number || '' }}
           EVENT_PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number || '' }}

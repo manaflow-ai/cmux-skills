@@ -161,9 +161,9 @@ esac
 # must not overwrite a newer head's check.
 policy_conclusion=success
 policy_reason='the maintained CLA writer validated the live pull request'
-if [[ "${WRITER_RESULT:-}" != success || "${WRITER_POLICY_RESULT:-}" != success ]]; then
+if [[ "${WRITER_RESULT:-}" != success || "${WRITER_POLICY_RESULT:-}" != true ]]; then
   policy_conclusion=failure
-  policy_reason='the maintained CLA writer did not report a successful CLA policy result'
+  policy_reason='the maintained CLA writer did not report cla_passed=true'
 fi
 if [[ -n "${WRITER_HEAD_SHA:-}" ]]; then
   is_sha "${WRITER_HEAD_SHA}" || no_refresh
@@ -185,21 +185,31 @@ if [[ "${event_kind}" != lifecycle ]]; then
 fi
 
 external_id="cla-refresh:${CLA_GENERATION}:${PR_NUMBER}:${HEAD_SHA}"
-if [[ "${policy_conclusion}" == success ]]; then
-  title='CLA declaration validated'
-  summary='The maintained CLA writer validated the current pull request head.'
-else
-  title='CLA declaration failed'
-  summary="CLA validation failed: ${policy_reason}. Correct the declaration and request a new check."
-fi
 run_url="${GITHUB_SERVER_URL}/${GH_REPO}/actions/runs/${GITHUB_RUN_ID}"
-payload="$(jq -n \
-  --arg name "${CHECK_NAME}" --arg sha "${HEAD_SHA}" --arg conclusion "${policy_conclusion}" \
-  --arg details_url "${run_url}" --arg external_id "${external_id}" \
-  --arg title "${title}" --arg summary "${summary}" \
-  '{name:$name,head_sha:$sha,status:"completed",conclusion:$conclusion,
-    details_url:$details_url,external_id:$external_id,
-    output:{title:$title,summary:$summary}}')"
+build_payload() {
+  local title summary
+  if [[ "${policy_conclusion}" == success ]]; then
+    title='CLA declaration validated'
+    summary='The maintained CLA writer validated the current pull request head.'
+  else
+    title='CLA declaration failed'
+    summary="CLA validation failed: ${policy_reason}. Correct the declaration and request a new check."
+  fi
+  payload="$(jq -n \
+    --arg name "${CHECK_NAME}" --arg sha "${HEAD_SHA}" --arg conclusion "${policy_conclusion}" \
+    --arg details_url "${run_url}" --arg external_id "${external_id}" \
+    --arg title "${title}" --arg summary "${summary}" \
+    '{name:$name,head_sha:$sha,status:"completed",conclusion:$conclusion,
+      details_url:$details_url,external_id:$external_id,
+      output:{title:$title,summary:$summary}}')"
+}
+
+preserve_success_if_present() {
+  if [[ "${policy_conclusion}" == failure && "${existing_success:-false}" == true ]]; then
+    policy_conclusion=success
+    policy_reason='an existing successful result was preserved while reconciling a concurrent stale failure'
+  fi
+}
 
 collect_matching_check_ids() {
   # The API check_name filter is case sensitive, while branch protection
@@ -274,6 +284,10 @@ collect_matching_check_ids() {
     '[.[] | .check_runs[] | select((.name | ascii_downcase) == "cla assistant v3" and
       (.app.id? == 15368) and .external_id == $external_id) | .id] | unique' <<<"${pages}")"
   match_count="$(jq -er 'length' <<<"${existing_ids}")"
+  existing_success="$(jq -r \
+    --arg external_id "${external_id}" \
+    'any(.[] | .check_runs[]; (.name | ascii_downcase) == "cla assistant v3" and
+      (.app.id? == 15368) and .external_id == $external_id and .conclusion == "success")' <<<"${pages}")"
 }
 
 # Re-read the live PR and, for comment events, the exact comment immediately
@@ -321,6 +335,8 @@ patch_check() {
 }
 
 collect_matching_check_ids
+preserve_success_if_present
+build_payload
 operation=updated
 if (( match_count == 0 )); then
   validate_final_binding
@@ -342,11 +358,15 @@ else
   fi
 fi
 
-# A concurrent POST can finish after the initial scan. Re-enumerate once and
-# reconcile any duplicates created by that race. Future events repeat the same
-# idempotent repair if GitHub's list is eventually consistent.
+# A concurrent POST can finish after the initial scan. Re-enumerate and
+# reconcile any duplicates created by that race. A prior successful result for
+# this immutable head is monotonic: an older failure cannot downgrade it.
 collect_matching_check_ids
-if (( match_count > 1 )); then
+if [[ "${policy_conclusion}" == failure && "${existing_success}" == true ]]; then
+  preserve_success_if_present
+  build_payload
+fi
+if (( match_count > 1 )) || [[ "${existing_success}" == true && "${policy_conclusion}" == success && "${operation}" == created ]]; then
   patch_payload="$(jq 'del(.head_sha)' <<<"${payload}")"
   while IFS= read -r check_id; do
     patch_check "${check_id}"
