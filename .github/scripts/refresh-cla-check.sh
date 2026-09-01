@@ -79,6 +79,16 @@ if [[ "${event_kind}" == recheck ]]; then
   esac
 fi
 
+validate_recheck_authorization() {
+  [[ "${event_kind}" == recheck ]] || return 0
+  jq -e --arg opener_id "${OPENER_ID}" '
+    ((.user.id | type == "number" and tostring == $opener_id) or
+      (.author_association == "OWNER") or
+      (.author_association == "MEMBER") or
+      (.author_association == "COLLABORATOR"))
+  ' <<<"${1}" >/dev/null || no_refresh
+}
+
 pr_json="$(gh api "repos/${GH_REPO}/pulls/${PR_NUMBER}" 2>/dev/null)" || fail 'Could not read the live pull request.'
 jq -e \
   --arg repo "${GH_REPO}" --argjson number "${PR_NUMBER}" \
@@ -131,10 +141,7 @@ else
      (.user.type == "User") and (.created_at | type == "string" and length > 0) and
      (.updated_at == .created_at) and (.issue_url == $issue_url)' \
     <<<"${comment_json}" >/dev/null || no_refresh
-  [[ "${COMMENT_USER_ID}" == "${OPENER_ID}" ||
-     "${COMMENT_ASSOCIATION}" == OWNER ||
-     "${COMMENT_ASSOCIATION}" == MEMBER ||
-     "${COMMENT_ASSOCIATION}" == COLLABORATOR ]] || no_refresh
+  validate_recheck_authorization "${comment_json}"
 fi
 
 case "${event_kind}" in
@@ -174,6 +181,7 @@ if [[ "${event_kind}" != lifecycle ]]; then
      (.user.id | type == "number" and tostring == $uid) and .user.type == "User" and
      (.created_at | type == "string" and length > 0) and .updated_at == .created_at and
      .issue_url == $issue_url' <<<"${comment_json}" >/dev/null || no_refresh
+  validate_recheck_authorization "${comment_json}"
 fi
 
 external_id="cla-refresh:${CLA_GENERATION}:${PR_NUMBER}:${HEAD_SHA}"
@@ -247,6 +255,7 @@ if [[ "${event_kind}" != lifecycle ]]; then
      (.user.id | type == "number" and tostring == $uid) and .user.type == "User" and
      (.created_at | type == "string" and length > 0) and .updated_at == .created_at and
      .issue_url == $issue_url' <<<"${comment_json}" >/dev/null || no_refresh
+  validate_recheck_authorization "${comment_json}"
 fi
 
 if (( match_count == 1 )); then
