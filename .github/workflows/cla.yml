@@ -4,15 +4,15 @@ on:
     types: [created]
   pull_request_target:
     branches: [main]
-    types: [opened,closed,reopened,synchronize,edited]
+    types: [opened,closed,reopened,synchronize,edited,ready_for_review]
 
 # Jobs declare only the permissions they need.
 permissions: {}
 
 # Change this marker only when the CLA policy or maintained action changes.
-# It keeps rerun workers tied to a stable policy generation.
+# It keeps exact-head workers tied to a stable policy generation.
 env:
-  CLA_GENERATION: 'v2.2-action-537cbad33cd5e55bd3ef9bcf33d26a965da4fe4a'
+  CLA_GENERATION: 'v2.2-action-5749bd2e5867b7545e66b55ac44acf616595bde3'
 
 jobs:
   CLACommentGate:
@@ -31,7 +31,8 @@ jobs:
           github.event.action == 'opened' ||
           github.event.action == 'reopened' ||
           github.event.action == 'synchronize' ||
-          github.event.action == 'edited'
+          github.event.action == 'edited' ||
+          github.event.action == 'ready_for_review'
         )
       ) ||
       (
@@ -46,7 +47,7 @@ jobs:
           github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA'
         )
       )
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # github-hosted-required: CLA policy jobs
     timeout-minutes: 5
     # The repository owner accepts one bounded pending run per repository,
     # event class, and pull request. GitHub compares the job-level expression
@@ -69,6 +70,8 @@ jobs:
           COMMENT_BODY: ${{ github.event.comment.body || '' }}
           COMMENT_USER_TYPE: ${{ github.event.comment.user.type || '' }}
           COMMENT_USER_ID: "${{ github.event.comment.user.id || '' }}"
+          COMMENT_ASSOCIATION: "${{ github.event.comment.author_association || '' }}"
+          PR_AUTHOR_ID: "${{ github.event.issue.user.id || '' }}"
           COMMENT_ISSUE_STATE: "${{ github.event.issue.state || '' }}"
           COMMENT_IS_PULL_REQUEST: "${{ github.event.issue.pull_request != null }}"
         run: |
@@ -103,10 +106,21 @@ jobs:
               fi
               exit 0
             fi
-            emit_admission true
+            if [[ "${COMMENT_BODY}" == "recheck" ]]; then
+              if [[ "${COMMENT_USER_ID}" == "${PR_AUTHOR_ID}" ]]; then
+                emit_admission true
+              else
+                case "${COMMENT_ASSOCIATION}" in
+                  OWNER|MEMBER|COLLABORATOR) emit_admission true ;;
+                  *) reject_trigger ;;
+                esac
+              fi
+            else
+              emit_admission true
+            fi
           elif [[ "${EVENT_NAME}" == "pull_request_target" ]]; then
             case "${EVENT_ACTION}" in
-              opened|reopened|synchronize|edited) ;;
+              opened|reopened|synchronize|edited|ready_for_review) ;;
               *)
                 if ! reject_trigger; then
                   exit 1
@@ -133,7 +147,7 @@ jobs:
       github.event_name == 'issue_comment' &&
       github.event.action == 'created' &&
       github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # github-hosted-required: CLA policy jobs
     timeout-minutes: 10
     permissions:
       contents: read
@@ -147,7 +161,7 @@ jobs:
     steps:
       - name: "Authenticate current CLA signer"
         id: preflight
-        uses: manaflow-ai/cla-github-action@537cbad33cd5e55bd3ef9bcf33d26a965da4fe4a # signer-preflight requires the merged maintained action
+        uses: manaflow-ai/cla-github-action@5749bd2e5867b7545e66b55ac44acf616595bde3 # signer-preflight requires the merged maintained action
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -165,6 +179,9 @@ jobs:
     needs:
       - CLACommentGate
       - CLASignerPreflight
+    outputs:
+      validated_head_sha: ${{ steps.cla-revision.outputs.head_sha || '' }}
+      validated_base_sha: ${{ steps.cla-revision.outputs.base_sha || '' }}
     # Keep a visible signer result when the unprivileged gate rejects a
     # case-insensitive expression match. The first step fails closed before
     # any privileged API operation.
@@ -179,7 +196,8 @@ jobs:
             github.event.action == 'opened' ||
             github.event.action == 'reopened' ||
             github.event.action == 'synchronize' ||
-            github.event.action == 'edited'
+          github.event.action == 'edited' ||
+          github.event.action == 'ready_for_review'
           )
         ) ||
         (
@@ -210,23 +228,22 @@ jobs:
           )
         )
       )
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # github-hosted-required: CLA policy jobs
     timeout-minutes: 10
-    # Serialize every signer event by repository, event class, and PR. This
+    # Serialize signature writes per pull request. The shared ledger uses the maintained action's bounded optimistic compare-and-swap retries for cross-PR conflicts. This
     # prevents sign and recheck comments from overlapping while keeping
     # issue_comment separate from pull_request_target lifecycle validation.
     # The merged-only lock has its own per-PR queue.
     concurrency:
-      group: "cla-signatures-${{ github.repository }}-${{ github.event_name }}-${{ github.event.issue.number || github.event.pull_request.number }}"
+      group: "cla-signatures-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number }}"
       cancel-in-progress: false
     # Keep the token scoped to the GitHub API operations used by this job.
     permissions:
       contents: write
       issues: write
-      # GitHub's pull_request_target token denied issue comments for fork PRs with
-      # this set to read, despite the endpoint documentation allowing issues:write.
-      # Keep write until that live behavior changes.
-      pull-requests: write
+      # The action only reads pull-request metadata. Keep this permission read-only;
+      # issue comments and ledger commits use the narrowly scoped permissions above.
+      pull-requests: read
     steps:
       - name: "Require successful CLA admission"
         if: ${{ always() }}
@@ -264,7 +281,7 @@ jobs:
           set -euo pipefail
           if [[ "$EVENT_NAME" == "pull_request_target" ]]; then
             case "$EVENT_ACTION" in
-              opened|reopened|synchronize|edited) ;;
+              opened|reopened|synchronize|edited|ready_for_review) ;;
               *)
                 echo "::error::CLA preflight received an unsupported pull request event; refusing to run."
                 exit 1
@@ -434,20 +451,49 @@ jobs:
               exit 1
             fi
           fi
+      - name: "Bind live pull request revision"
+        id: cla-revision
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number || '' }}
+        run: |
+          set -euo pipefail
+          [[ "${PR_NUMBER}" =~ ^[1-9][0-9]*$ ]] || {
+            echo "::error::Invalid pull request number"
+            exit 1
+          }
+          pr_json="$(gh api "repos/${GH_REPO}/pulls/${PR_NUMBER}" 2>/dev/null)" || {
+            echo "::error::Could not read the live pull request"
+            exit 1
+          }
+          jq -e --arg repo "${GH_REPO}" --argjson number "${PR_NUMBER}" '
+            .number == $number and .state == "open" and .merged_at == null and
+            .base.ref == "main" and
+            ((.base.repo.full_name | ascii_downcase) == ($repo | ascii_downcase)) and
+            (.base.sha | type == "string" and test("^[0-9a-fA-F]{40}$")) and
+            (.head.sha | type == "string" and test("^[0-9a-fA-F]{40}$")) and
+            (.head.ref | type == "string" and length > 0 and length <= 255)
+          ' <<<"${pr_json}" >/dev/null || {
+            echo "::error::The live pull request is not valid for CLA"
+            exit 1
+          }
+          printf 'head_sha=%s\nbase_sha=%s\n' "$(jq -er '.head.sha' <<<"${pr_json}")" "$(jq -er '.base.sha' <<<"${pr_json}")" >> "${GITHUB_OUTPUT}"
       - name: "CLA Assistant v2"
         if: ${{ success() }}
         # The action writes the signature ledger and issue comments. GitHub
         # creates the displayed job check run; the maintained source makes no
         # commit-status API call, so statuses:write is intentionally omitted.
         # Merged pull requests are locked by the separate job.
-        uses: manaflow-ai/cla-github-action@537cbad33cd5e55bd3ef9bcf33d26a965da4fe4a # reviewed maintained fork runtime+dist
+        uses: manaflow-ai/cla-github-action@5749bd2e5867b7545e66b55ac44acf616595bde3 # reviewed maintained fork runtime+dist
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           path-to-signatures: 'signatures/version2/cla.json'
           # Bind this privileged write to the exact head and base authenticated by the read-only preflight.
-          expected-head-sha: ${{ needs.CLASignerPreflight.outputs.head_sha }}
-          expected-base-sha: ${{ needs.CLASignerPreflight.outputs.base_sha }}
+          expected-head-sha: ${{ github.event_name == 'issue_comment' && github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA' && needs.CLASignerPreflight.outputs.head_sha || steps.cla-revision.outputs.head_sha }}
+          expected-base-sha: ${{ github.event_name == 'issue_comment' && github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA' && needs.CLASignerPreflight.outputs.base_sha || steps.cla-revision.outputs.base_sha }}
           path-to-document: 'https://github.com/manaflow-ai/cmux-skills/blob/${{ github.workflow_sha }}/CLA.md'
           # Locking is handled by the merged-only job below, which supplies a
           # valid reason and verifies the resulting lock state.
@@ -470,7 +516,7 @@ jobs:
       - CLASignerPreflight
       - CLAAssistant
     # Issue-comment workflows run on the default branch SHA, not the PR head.
-    # This result remains advisory until a trusted exact-head rerun worker
+    # This result remains advisory until a trusted exact-head check worker
     # refreshes the PR check after a signature comment.
     if: >-
       always() &&
@@ -481,7 +527,8 @@ jobs:
             github.event.action == 'opened' ||
             github.event.action == 'reopened' ||
             github.event.action == 'synchronize' ||
-            github.event.action == 'edited'
+          github.event.action == 'edited' ||
+          github.event.action == 'ready_for_review'
           )
         ) ||
         (
@@ -498,7 +545,7 @@ jobs:
           )
         )
       )
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # github-hosted-required: CLA policy jobs
     timeout-minutes: 5
     permissions: {}
     steps:
@@ -550,7 +597,7 @@ jobs:
       github.event_name == 'pull_request_target' &&
       github.event.action == 'closed' &&
       github.event.pull_request.merged == true
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # github-hosted-required: CLA policy jobs
     timeout-minutes: 10
     concurrency:
       # Keep merged-pull-request locks in their own per-PR queue. A later
@@ -674,3 +721,118 @@ jobs:
           if [[ "$locked" != "true" ]]; then
             fail "CLA lock step did not observe the pull request as locked."
           fi
+  CLAHeadCheckRefresh:
+    name: "Refresh CLA required check"
+    needs:
+      - CLACommentGate
+      - CLASignerPreflight
+      - CLAAssistant
+    # This is the only check-run writer. It binds the required v3 context to
+    # the live PR head after validating the trusted event and exact comment.
+    if: >-
+      always() &&
+      needs.CLACommentGate.result == 'success' &&
+      needs.CLACommentGate.outputs.admitted == 'true' &&
+      (
+        (
+          github.event_name == 'pull_request_target' &&
+          (
+            github.event.action == 'opened' ||
+            github.event.action == 'reopened' ||
+            github.event.action == 'synchronize' ||
+            github.event.action == 'edited' ||
+            github.event.action == 'ready_for_review'
+          )
+        ) ||
+        (
+          github.event_name == 'issue_comment' &&
+          github.event.action == 'created' &&
+          github.event.issue.state == 'open' &&
+          github.event.issue.pull_request != null &&
+          github.event.comment.user.type == 'User' &&
+          github.event.comment.user.id != null &&
+          github.event.comment.user.id > 0 &&
+          (
+            (
+              github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA' &&
+              needs.CLASignerPreflight.result == 'success' &&
+              needs.CLASignerPreflight.outputs.signer_authorized == 'true'
+            ) ||
+            (
+              github.event.comment.body == 'recheck' &&
+              (
+                github.event.comment.user.id == github.event.issue.user.id ||
+                github.event.comment.author_association == 'OWNER' ||
+                github.event.comment.author_association == 'MEMBER' ||
+                github.event.comment.author_association == 'COLLABORATOR'
+              )
+            )
+          )
+        )
+      )
+    runs-on: ubuntu-24.04 # github-hosted-required: CLA policy jobs
+    timeout-minutes: 10
+    concurrency:
+      group: "cla-check-refresh-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number }}"
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      checks: write
+      issues: read
+      pull-requests: read
+    steps:
+      - name: "Checkout trusted CLA refresh worker"
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout: .github/scripts/refresh-cla-check.sh
+          sparse-checkout-cone-mode: false
+      - name: "Verify trusted refresh checkout"
+        env:
+          WORKFLOW_SHA: ${{ github.workflow_sha || '' }}
+        run: |
+          set -euo pipefail
+          [[ "${WORKFLOW_SHA}" =~ ^[0-9a-fA-F]{40}$ ]] || exit 1
+          [[ "$(git rev-parse HEAD)" == "${WORKFLOW_SHA,,}" ]] || exit 1
+          [[ -x .github/scripts/refresh-cla-check.sh ]] || exit 1
+      - name: "Publish exact-head CLA v3 check"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          EXPECTED_REPO: 'manaflow-ai/cmux-skills'
+          REPOSITORY_ID: ${{ github.repository_id || '' }}
+          WORKFLOW_SHA: ${{ github.workflow_sha || '' }}
+          EXPECTED_GENERATION: 'v2.2-action-5749bd2e5867b7545e66b55ac44acf616595bde3'
+          CLA_GENERATION: ${{ env.CLA_GENERATION }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number || '' }}
+          EVENT_PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number || '' }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action || '' }}
+          EVENT_PR_STATE: ${{ github.event.pull_request.state || '' }}
+          EVENT_BASE_REF: ${{ github.event.pull_request.base.ref || '' }}
+          EVENT_BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+          EVENT_BASE_REPOSITORY: ${{ github.event.pull_request.base.repo.full_name || '' }}
+          EVENT_BASE_REPOSITORY_ID: ${{ github.event.pull_request.base.repo.id || '' }}
+          EVENT_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name || '' }}
+          EVENT_HEAD_REPOSITORY_ID: ${{ github.event.pull_request.head.repo.id || '' }}
+          EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
+          EVENT_ISSUE_STATE: ${{ github.event.issue.state || '' }}
+          EVENT_ISSUE_IS_PR: ${{ github.event.issue.pull_request != null }}
+          EVENT_OPENER_ID: ${{ github.event.issue.user.id || github.event.pull_request.user.id || '' }}
+          COMMENT_ID: ${{ github.event.comment.id || '' }}
+          COMMENT_BODY: ${{ github.event.comment.body || '' }}
+          COMMENT_USER_ID: ${{ github.event.comment.user.id || '' }}
+          COMMENT_USER_TYPE: ${{ github.event.comment.user.type || '' }}
+          COMMENT_ASSOCIATION: ${{ github.event.comment.author_association || '' }}
+          GATE_RESULT: ${{ needs.CLACommentGate.result || '' }}
+          GATE_ADMITTED: ${{ needs.CLACommentGate.outputs.admitted || '' }}
+          PREFLIGHT_RESULT: ${{ needs.CLASignerPreflight.result || '' }}
+          SIGNER_AUTHORIZED: ${{ needs.CLASignerPreflight.outputs.signer_authorized || '' }}
+          SIGNER_HEAD_SHA: ${{ needs.CLASignerPreflight.outputs.head_sha || '' }}
+          SIGNER_BASE_SHA: ${{ needs.CLASignerPreflight.outputs.base_sha || '' }}
+          WRITER_RESULT: ${{ needs.CLAAssistant.result || '' }}
+          WRITER_HEAD_SHA: ${{ needs.CLAAssistant.outputs.validated_head_sha || '' }}
+        run: bash .github/scripts/refresh-cla-check.sh
