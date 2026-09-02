@@ -53,7 +53,7 @@ jobs:
     runs-on: ubuntu-24.04 # github-hosted-required: CLA policy jobs
     timeout-minutes: 10
     concurrency:
-      group: cla-admission-${{ github.repository }}-${{ github.event_name }}-${{ github.event.issue.number || github.event.pull_request.number }}-${{ github.event.comment.id || github.run_id }}
+      group: cla-admission-${{ github.repository }}-${{ github.workflow }}-${{ github.run_id }}-${{ github.run_attempt }}
       cancel-in-progress: false
     permissions:
       contents: read
@@ -434,6 +434,7 @@ jobs:
       cancel-in-progress: false
     permissions:
       actions: write
+      checks: read
       contents: read
       issues: read
       pull-requests: read
