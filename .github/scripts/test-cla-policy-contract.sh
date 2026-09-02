@@ -6,7 +6,7 @@ WORKFLOW="${ROOT_DIR}/.github/workflows/cla.yml"
 CODEOWNERS="${ROOT_DIR}/.github/CODEOWNERS"
 FIXTURE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/fixtures/cla-allowlist-aziz.json"
 ACTION_SHA='212a0f2dd659b24b48a30ba35966e06dc41736af'
-MUTATION_GROUP="cla-mutation-\${{ github.repository }}-\${{ github.event.pull_request.number || github.event.issue.number }}"
+printf -v MUTATION_GROUP 'cla-mutation-%s{{ github.repository }}-%s{{ github.event.pull_request.number || github.event.issue.number }}' '$' '$'
 
 command -v jq >/dev/null
 command -v ruby >/dev/null
