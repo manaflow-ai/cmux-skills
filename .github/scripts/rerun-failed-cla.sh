@@ -67,6 +67,7 @@ readonly MAX_LEDGER_RAW_BYTES=2000000
 readonly CLA_ASSISTANT_JOB='CLA Assistant v3'
 readonly CLA_WRITER_JOB='CLA ledger writer'
 readonly CLA_COMPATIBILITY_JOB='CLA Assistant'
+readonly CLA_COMPATIBILITY_STEP='Mirror CLA Assistant compatibility result'
 readonly CLA_WORKFLOW_NAME='CLA Assistant v3'
 readonly CLA_ACTION_APP_ID=15368
 
@@ -1226,6 +1227,7 @@ validate_failed_job_set() {
       --arg compatibility_job "${CLA_COMPATIBILITY_JOB}" \
       --arg workflow_name "${CLA_WORKFLOW_NAME}" \
       --arg workflow_id "${workflow_id}" \
+      --arg compatibility_step "${CLA_COMPATIBILITY_STEP}" \
       '[.[] | select(
          .name == $compatibility_job and
          ((has("workflow_name") | not) or
@@ -1242,7 +1244,11 @@ validate_failed_job_set() {
            ((.head_repository | type) == "object" and
             .head_repository.full_name == $head_repo and
             .head_repository.id == $head_repo_id)))
-      )] | length' <<<"${failed_jobs_json}")"; then
+          and any(.steps[]?;
+            .name == $compatibility_step and
+            .status == "completed"
+          )
+       )] | length' <<<"${failed_jobs_json}")"; then
     fail "Could not validate failed CLA compatibility jobs"
   fi
   [[ "${compatibility_count}" =~ ^[0-9]+$ && "${compatibility_valid_count}" =~ ^[0-9]+$ ]] || fail "Could not count failed CLA compatibility jobs"
@@ -1275,9 +1281,11 @@ select_rerun_job() {
     --arg run_sha "${run_execution_sha}" \
     --arg target_job "${RERUN_TARGET_JOB_NAME}" \
     --arg assistant_job "${CLA_ASSISTANT_JOB}" \
+    --arg compatibility_job "${CLA_COMPATIBILITY_JOB}" \
     --arg workflow_name "${CLA_WORKFLOW_NAME}" \
     --arg workflow_id "${workflow_id}" \
     --arg generation_step "CLA generation ${CLA_GENERATION}" \
+    --arg compatibility_step "${CLA_COMPATIBILITY_STEP}" \
     --arg head_repo "${head_repo}" \
     --argjson head_repo_id "${head_repo_id}" \
     '[.[] | .jobs[]?
@@ -1299,11 +1307,16 @@ select_rerun_job() {
             (.head_repository.full_name == $head_repo and
              .head_repository.id == $head_repo_id)
           ) and
-          ($target_job != $assistant_job or
-           any(.steps[]?;
-             .name == $generation_step and
-             .status == "completed"
-           ))
+          (($target_job == $assistant_job and
+            any(.steps[]?;
+              .name == $generation_step and
+              .status == "completed"
+            )) or
+           ($target_job == $compatibility_job and
+            any(.steps[]?;
+              .name == $compatibility_step and
+              .status == "completed"
+            )))
         )
     ]
     | if length == 1 then .[0] else empty end
@@ -1319,9 +1332,11 @@ validate_exact_job_payload() {
     --arg run_sha "${run_execution_sha}" \
     --arg target_job "${RERUN_TARGET_JOB_NAME}" \
     --arg assistant_job "${CLA_ASSISTANT_JOB}" \
+    --arg compatibility_job "${CLA_COMPATIBILITY_JOB}" \
     --arg workflow_name "${CLA_WORKFLOW_NAME}" \
     --arg workflow_id "${workflow_id}" \
     --arg generation_step "CLA generation ${CLA_GENERATION}" \
+    --arg compatibility_step "${CLA_COMPATIBILITY_STEP}" \
     --arg head_repo "${head_repo}" \
     --argjson head_repo_id "${head_repo_id}" '
       (.id | type == "number") and
@@ -1346,11 +1361,16 @@ validate_exact_job_payload() {
          .head_repository.full_name == $head_repo and
          .head_repository.id == $head_repo_id)
       ) and
-      ($target_job != $assistant_job or
-       any(.steps[]?;
-         .name == $generation_step and
-         .status == "completed"
-       ))
+      (($target_job == $assistant_job and
+        any(.steps[]?;
+          .name == $generation_step and
+          .status == "completed"
+        )) or
+       ($target_job == $compatibility_job and
+        any(.steps[]?;
+          .name == $compatibility_step and
+          .status == "completed"
+        )))
     ' <<<"${payload}" >/dev/null
 }
 
