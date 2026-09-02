@@ -4,13 +4,14 @@ set -euo pipefail
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 WORKFLOW="${ROOT_DIR}/.github/workflows/cla.yml"
 LEDGER="${ROOT_DIR}/signatures/version2/cla.json"
+CODEOWNERS="${ROOT_DIR}/.github/CODEOWNERS"
 FIXTURE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/fixtures/cla-allowlist-aziz.json"
 ACTION_SHA='212a0f2dd659b24b48a30ba35966e06dc41736af'
 MUTATION_GROUP="cla-mutation-\${{ github.repository }}-\${{ github.event.pull_request.number || github.event.issue.number }}"
 
 command -v jq >/dev/null
 command -v ruby >/dev/null
-[[ -f "${WORKFLOW}" && -f "${LEDGER}" && -f "${FIXTURE}" ]]
+[[ -f "${WORKFLOW}" && -f "${LEDGER}" && -f "${FIXTURE}" && -f "${CODEOWNERS}" ]]
 
 refs="$(grep -oE "manaflow-ai/cla-github-action@[0-9a-f]{40}" "${WORKFLOW}" | sort -u)"
 [[ "${refs}" == "manaflow-ai/cla-github-action@${ACTION_SHA}" ]]
@@ -56,6 +57,10 @@ jq -e '
     (.id | type == "number" and floor == . and . > 0)
   )
 ' "${LEDGER}" >/dev/null
+
+for path in '.github/workflows/cla.yml' '.github/scripts/' 'signatures/' 'CLA.md'; do
+  grep -Eq "^${path//\//\\/}[[:space:]]+@austinywang[[:space:]]+@azooz2003-bit$" "${CODEOWNERS}"
+done
 
 # The canary models the maintained action's opener-only numeric allowlist.
 # It proves Aziz's authenticated opener ID is accepted while an unknown ID is
