@@ -66,6 +66,9 @@ gh() {
   local run_sha="${base_sha}"
   local run_path=.github/workflows/cla.yml
   local run_name='CLA Assistant v3'
+  local current_comment_author_association="${COMMENT_AUTHOR_ASSOCIATION}"
+  local multiple_runs=false
+  local result_job_id=500
   local run_prs
   run_prs="[{\"number\":123,\"base\":{\"ref\":\"main\",\"sha\":\"${base_sha}\",\"repo\":{\"id\":100,\"full_name\":\"${GH_REPO}\"}},\"head\":{\"ref\":\"feature\",\"sha\":\"${source_sha}\",\"repo\":{\"id\":200,\"full_name\":\"contributor/${GH_REPO#*/}\"}}}]"
   local run_head_repository='{"id":200,"full_name":"contributor/cmux-skills"}'
@@ -97,6 +100,14 @@ gh() {
       run_sha="${mismatch_sha}"
       check_lookup_sha="${source_sha}"
       check_head_sha="${mismatch_sha}"
+      ;;
+    stale-author-association)
+      current_comment_author_association=NONE
+      ;;
+    newer-fallback)
+      multiple_runs=true
+      result_job_id=600
+      check_details="https://github.com/${GH_REPO}/actions/runs/401/job/600"
       ;;
     wrong-app)
       check_app_id=999
@@ -131,7 +142,7 @@ gh() {
       jq -nc --arg url "https://api.github.com/repos/${GH_REPO}/pulls/123" '{state:"open",pull_request:{url:$url}}'
       ;;
     "${repo_prefix}/issues/comments/900")
-      jq -nc --arg issue_url "https://api.github.com/repos/${GH_REPO}/issues/123" --arg body "${COMMENT_BODY}" --argjson id "${COMMENT_AUTHOR_ID}" --arg login "${COMMENT_AUTHOR_LOGIN}" --arg type "${COMMENT_AUTHOR_TYPE}" --arg created "${COMMENT_CREATED_AT}" '{issue_url:$issue_url,body:$body,user:{id:$id,login:$login,type:$type},created_at:$created,updated_at:$created}'
+      jq -nc --arg issue_url "https://api.github.com/repos/${GH_REPO}/issues/123" --arg body "${COMMENT_BODY}" --argjson id "${COMMENT_AUTHOR_ID}" --arg login "${COMMENT_AUTHOR_LOGIN}" --arg type "${COMMENT_AUTHOR_TYPE}" --arg association "${current_comment_author_association}" --arg created "${COMMENT_CREATED_AT}" '{issue_url:$issue_url,body:$body,user:{id:$id,login:$login,type:$type},author_association:$association,created_at:$created,updated_at:$created}'
       ;;
     "${repo_prefix}/pulls/123")
       jq -nc --arg repo "${GH_REPO}" --arg source_sha "${source_sha}" --arg base_sha "${base_sha}" --arg head_repo "contributor/${GH_REPO#*/}" '{number:123,state:"open",user:{id:300,login:"contributor"},base:{ref:"main",sha:$base_sha,repo:{id:100,full_name:$repo}},head:{ref:"feature",sha:$source_sha,repo:{id:200,full_name:$head_repo}}}'
@@ -146,7 +157,11 @@ gh() {
       jq -nc '{workflows:[{id:300,path:".github/workflows/cla.yml",state:"active"}]}'
       ;;
     "${repo_prefix}/actions/workflows/300/runs")
-      jq -nc --arg path "${run_path}" --arg name "${run_name}" --arg sha "${run_sha}" --argjson prs "${run_prs}" --argjson head_repo "${run_head_repository}" '{workflow_runs:[{id:400,workflow_id:300,name:$name,path:$path,event:"pull_request_target",status:"completed",conclusion:"failure",head_sha:$sha,head_branch:"feature",head_repository:$head_repo,pull_requests:$prs,created_at:"2026-09-01T07:00:00Z"}]}'
+      if [[ "${multiple_runs}" == true ]]; then
+        jq -nc --arg path "${run_path}" --arg name "${run_name}" --arg sha "${base_sha}" --argjson prs "${run_prs}" --argjson head_repo "${run_head_repository}" '{workflow_runs:[{id:400,workflow_id:300,name:$name,path:$path,event:"pull_request_target",status:"completed",conclusion:"failure",head_sha:$sha,head_branch:"feature",head_repository:$head_repo,pull_requests:$prs,created_at:"2026-09-01T07:00:00Z"},{id:401,workflow_id:300,name:$name,path:$path,event:"pull_request_target",status:"completed",conclusion:"failure",head_sha:$sha,head_branch:"feature",head_repository:$head_repo,pull_requests:[],created_at:"2026-09-01T07:30:00Z"}]}'
+      else
+        jq -nc --arg path "${run_path}" --arg name "${run_name}" --arg sha "${run_sha}" --argjson prs "${run_prs}" --argjson head_repo "${run_head_repository}" '{workflow_runs:[{id:400,workflow_id:300,name:$name,path:$path,event:"pull_request_target",status:"completed",conclusion:"failure",head_sha:$sha,head_branch:"feature",head_repository:$head_repo,pull_requests:$prs,created_at:"2026-09-01T07:00:00Z"}]}'
+      fi
       ;;
     "${repo_prefix}/actions/runs/400")
       jq -nc --arg path "${run_path}" --arg name "${run_name}" --arg sha "${run_sha}" --argjson prs "${run_prs}" --argjson head_repo "${run_head_repository}" '{id:400,workflow_id:300,name:$name,path:$path,event:"pull_request_target",status:"completed",conclusion:"failure",head_sha:$sha,head_branch:"feature",head_repository:$head_repo,pull_requests:$prs,created_at:"2026-09-01T07:00:00Z"}'
@@ -158,10 +173,21 @@ gh() {
         jq -nc --arg sha "${run_sha}" --arg generation "${assistant_generation}" '{jobs:[{id:500,run_id:400,name:"CLA Assistant v3",workflow_name:"CLA Assistant v3",workflow_id:300,status:"completed",conclusion:"failure",head_sha:$sha,head_repository:null,steps:[{name:$generation,status:"completed",conclusion:"failure"}]}]}'
       fi
       ;;
+    "${repo_prefix}/actions/runs/401")
+      jq -nc --arg path "${run_path}" --arg name "${run_name}" --arg sha "${base_sha}" --argjson head_repo "${run_head_repository}" '{id:401,workflow_id:300,name:$name,path:$path,event:"pull_request_target",status:"completed",conclusion:"failure",head_sha:$sha,head_branch:"feature",head_repository:$head_repo,pull_requests:[],created_at:"2026-09-01T07:30:00Z"}'
+      ;;
+    "${repo_prefix}/actions/runs/401/jobs")
+      jq -nc --arg sha "${base_sha}" --argjson job_id "${result_job_id}" --arg generation "${assistant_generation}" '{jobs:[{id:$job_id,run_id:401,name:"CLA Assistant v3",workflow_name:"CLA Assistant v3",workflow_id:300,status:"completed",conclusion:"failure",head_sha:$sha,head_repository:null,steps:[{name:$generation,status:"completed",conclusion:"failure"}]}]}'
+      ;;
     "${repo_prefix}/actions/jobs/500")
       local assistant_conclusion='failure'
       [[ "${compatibility_only}" == true ]] && assistant_conclusion='success'
-      jq -nc --arg sha "${run_sha}" --arg generation "${assistant_generation}" --arg conclusion "${assistant_conclusion}" '{id:500,run_id:400,name:"CLA Assistant v3",workflow_name:"CLA Assistant v3",workflow_id:300,status:"completed",conclusion:$conclusion,head_sha:$sha,head_repository:null,steps:[{name:$generation,status:"completed",conclusion:$conclusion}]}'
+      local job_run_id=400
+      [[ "${multiple_runs}" == true ]] && job_run_id=401
+      jq -nc --arg sha "${base_sha}" --argjson run_id "${job_run_id}" --arg generation "${assistant_generation}" --arg conclusion "${assistant_conclusion}" '{id:500,run_id:$run_id,name:"CLA Assistant v3",workflow_name:"CLA Assistant v3",workflow_id:300,status:"completed",conclusion:$conclusion,head_sha:$sha,head_repository:null,steps:[{name:$generation,status:"completed",conclusion:$conclusion}]}'
+      ;;
+    "${repo_prefix}/actions/jobs/600")
+      jq -nc --arg sha "${base_sha}" --arg generation "${assistant_generation}" '{id:600,run_id:401,name:"CLA Assistant v3",workflow_name:"CLA Assistant v3",workflow_id:300,status:"completed",conclusion:"failure",head_sha:$sha,head_repository:null,steps:[{name:$generation,status:"completed",conclusion:"failure"}]}'
       ;;
     "${repo_prefix}/actions/jobs/501")
       jq -nc --arg sha "${run_sha}" '{id:501,run_id:400,name:"CLA Assistant",workflow_name:"CLA Assistant v3",workflow_id:300,status:"completed",conclusion:"failure",head_sha:$sha,head_repository:null,steps:[{name:"Mirror CLA Assistant compatibility result",status:"completed",conclusion:"failure"}]}'
@@ -183,9 +209,15 @@ export -f gh
 
 run_case() {
   local mode="$1" expected_status="$2" expected_posts="$3" expected_endpoint="${4:-}"
+  local event_association="${COMMENT_AUTHOR_ASSOCIATION}"
+  local event_author_id="${COMMENT_AUTHOR_ID}"
+  if [[ "${mode}" == stale-author-association ]]; then
+    event_association=OWNER
+    event_author_id=302
+  fi
   : >"${work}/posts"
   set +e
-  output="$(FAKE_MODE="${mode}" POSTS_FILE="${work}/posts" bash "${script}" 2>&1)"
+  output="$(FAKE_MODE="${mode}" COMMENT_AUTHOR_ASSOCIATION="${event_association}" COMMENT_AUTHOR_ID="${event_author_id}" POSTS_FILE="${work}/posts" bash "${script}" 2>&1)"
   status=$?
   set -e
   posts="$(wc -l <"${work}/posts" | tr -d ' ')"
@@ -202,9 +234,11 @@ run_case() {
 
 run_case normal 0 1 "repos/${GH_REPO}/actions/jobs/500/rerun"
 run_case base-empty 0 1 "repos/${GH_REPO}/actions/jobs/500/rerun"
+run_case newer-fallback 0 1 "repos/${GH_REPO}/actions/jobs/600/rerun"
 run_case populated-base-mismatch 1 0
 run_case fallback-null 1 0
 run_case fallback-base-mismatch 1 0
+run_case stale-author-association 1 0
 run_case wrong-app 1 0
 run_case wrong-details 1 0
 run_case suffix-path 0 0
