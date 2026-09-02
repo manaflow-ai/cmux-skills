@@ -300,6 +300,7 @@ assert_exact_pr_association() {
     --arg pr "${PR_NUMBER}" \
     --arg sha "${expected_sha}" \
     --arg base "${TARGET_BASE_REF}" \
+    --arg base_sha "${base_sha}" \
     --arg head_ref "${head_ref}" \
     --arg head_repo "${head_repo}" \
     --argjson head_repo_id "${head_repo_id}" \
@@ -311,6 +312,8 @@ assert_exact_pr_association() {
         .base.repo.full_name == $repo and
         (.base.repo.id | type == "number") and
         .base.repo.id == $repo_id and
+        (.base.sha | type == "string") and
+        .base.sha == $base_sha and
         .head.ref == $head_ref and
         .head.sha == $sha and
         .head.repo.full_name == $head_repo and
@@ -476,11 +479,11 @@ workflow_id="$(jq -r --arg path "${WORKFLOW_PATH}" '[.[] | .workflows[]? | selec
 # exact head, so sort by creation time and run ID and select the
 # newest one. Every candidate is tied to the exact workflow path and event.
 # When GitHub includes pull_requests on a run, bind the candidate to the exact
-# PR object, including its source head SHA. GitHub can return an empty array for
-# pull_request_target runs. Those candidates are retained when their branch and
-# repository identity matches the live PR, then independently bound below by
-# the live base SHA or an exact failed check on the source head. Populated
-# records may bind a different execution SHA directly.
+# PR object, including its source head and live base SHAs. GitHub can return an
+# empty array for pull_request_target runs. Those candidates are accepted only
+# when the run has complete source-repository metadata and its execution SHA is
+# the live PR base SHA. Missing metadata cannot identify which fork produced a
+# branch, so it is always rejected before any check is rerun.
 runs_page="$(gh_api_bounded \
   --method GET \
   --header 'Accept: application/vnd.github+json' \
@@ -564,22 +567,19 @@ if ! candidate_list_json="$(jq -c \
         | if $prs == null then false
           elif ($prs | length > 100) then false
           elif ($prs | length) == 0 then
+            .head_sha == $base_sha and
             .head_branch == $head_ref and
-            (
-              ((.head_repository | type) == "object" and
-               .head_repository.full_name == $head_repo and
-               (.head_repository.id | type == "number") and
-               .head_repository.id == $head_repo_id) or
-              .head_repository == null
-            )
-            # Empty associations are discovery candidates only. Source and
-            # repository binding is proved after the exact run and job are
-            # re-read; the sort rank keeps an exact source run ahead of an
-            # unrelated execution while preserving the base-SHA preference.
+            (.head_repository | type) == "object" and
+            .head_repository.full_name == $head_repo and
+            (.head_repository.id | type == "number") and
+            .head_repository.id == $head_repo_id
           else any($prs[]?;
             (.number | type == "number") and
             (.number | tostring) == $pr and
             .base.ref == $base and
+            (.base.sha | type == "string") and
+            (.base.sha | test("^[0-9a-f]{40}$")) and
+            .base.sha == $base_sha and
             ((.base.repo.full_name // "") == "" or
              .base.repo.full_name == $repo) and
             (.base.repo.id | type == "number") and
@@ -602,12 +602,10 @@ if ! candidate_list_json="$(jq -c \
             .name == $workflow_name and
             (.head_sha | type == "string") and
             (.head_sha | test("^[0-9a-f]{40}$")) and
-            ((has("head_repository") | not) or
-             .head_repository == null or
-             ((.head_repository | type) == "object" and
-              .head_repository.full_name == $head_repo and
-              (.head_repository.id | type == "number") and
-              .head_repository.id == $head_repo_id)) and
+            (.head_repository | type) == "object" and
+            .head_repository.full_name == $head_repo and
+            (.head_repository.id | type == "number") and
+            .head_repository.id == $head_repo_id and
             (.id | type == "number") and
             .id > 0 and
             .status == "completed" and
@@ -635,21 +633,17 @@ if [[ "${candidate_count}" == "0" ]]; then
   if [[ "${run_window_full}" == true ]]; then
     fail "The GitHub workflow-run result window is full after ${MAX_RUN_PAGES} pages and contains no matching failed CLA run; push a new commit or ask an administrator to prune old runs before requesting a rerun"
   fi
-  # Do not silently treat a failed run with an empty association and a
-  # different execution SHA as a successful no-op. It is not eligible for a
-  # rerun, but it still needs an explicit fail-closed migration/error path.
-  # Runs with the exact source SHA are handled by the candidate query above;
-  # this count therefore only catches mismatched runs that would otherwise be
-  # indistinguishable from an absent check.
+  # Do not silently treat a failed run with an empty association and incomplete
+  # source metadata as a successful no-op. A branch name or a null repository
+  # can describe another fork, so every such run gets an explicit fail-closed
+  # error before the helper can return.
   empty_execution_mismatch_count="$(jq -r \
     --arg path "${WORKFLOW_PATH}" \
     --arg event "${TARGET_EVENT}" \
     --arg sha "${head_sha}" \
     --arg workflow_id "${workflow_id}" \
-    --arg repo "${GH_REPO}" \
     --arg head_repo "${head_repo}" \
     --argjson head_repo_id "${head_repo_id}" \
-    --argjson repo_id "${repo_id}" \
     --arg head_ref "${head_ref}" \
     --arg workflow_name "${CLA_WORKFLOW_NAME}" \
     --arg before "${COMMENT_CREATED_AT}" \
@@ -663,7 +657,13 @@ if [[ "${candidate_count}" == "0" ]]; then
           .name == $workflow_name and
           (.head_sha | type == "string") and
           (.head_sha | test("^[0-9a-f]{40}$")) and
-          .head_sha != $sha and
+          (
+            .head_sha != $sha or
+            (.head_repository | type) != "object" or
+            .head_repository.full_name != $head_repo or
+            (.head_repository.id | type) != "number" or
+            .head_repository.id != $head_repo_id
+          ) and
           (.id | type == "number") and
           .id > 0 and
           .status == "completed" and
@@ -674,19 +674,79 @@ if [[ "${candidate_count}" == "0" ]]; then
           .head_branch == $head_ref and
           (.pull_requests == null or
            ((.pull_requests | type) == "array" and
-            (.pull_requests | length) == 0)) and
-          (
-            ((.head_repository | type) == "object" and
-             .head_repository.full_name == $head_repo and
-             (.head_repository.id | type == "number") and
-             .head_repository.id == $head_repo_id) or
-            .head_repository == null
-          )
+            (.pull_requests | length) == 0))
         )
     ] | length' <<<"${runs_json}")"
   [[ "${empty_execution_mismatch_count}" =~ ^[0-9]+$ ]] || fail "Could not count unbound CLA workflow runs"
   if (( empty_execution_mismatch_count > 0 )); then
-    fail "The workflow run has no pull request association and its execution SHA does not match the current pull request head"
+    fail "The workflow run has no pull request association with complete source metadata and an exact execution SHA"
+  fi
+
+  # A populated association with an old base SHA is not an absent check. It is
+  # a stale failed run that must fail closed, otherwise a later rerun could
+  # execute policy against a different target revision. Count only an exact
+  # PR/source identity and treat a missing or malformed association base SHA as
+  # stale as well.
+  stale_base_count="$(jq -r \
+    --arg path "${WORKFLOW_PATH}" \
+    --arg event "${TARGET_EVENT}" \
+    --arg sha "${head_sha}" \
+    --arg workflow_id "${workflow_id}" \
+    --arg pr "${PR_NUMBER}" \
+    --arg repo "${GH_REPO}" \
+    --arg head_ref "${head_ref}" \
+    --arg head_repo "${head_repo}" \
+    --argjson head_repo_id "${head_repo_id}" \
+    --argjson repo_id "${repo_id}" \
+    --arg base "${TARGET_BASE_REF}" \
+    --arg base_sha "${base_sha}" \
+    --arg workflow_name "${CLA_WORKFLOW_NAME}" \
+    --arg before "${COMMENT_CREATED_AT}" \
+    '[ .[] | .workflow_runs[]?
+      | select(
+          .path == $path and
+          .event == $event and
+          (.workflow_id | type == "number") and
+          .workflow_id == ($workflow_id | tonumber) and
+          (.name | type == "string") and
+          .name == $workflow_name and
+          (.head_sha | type == "string") and
+          (.head_sha | test("^[0-9a-f]{40}$")) and
+          (.head_repository | type) == "object" and
+          .head_repository.full_name == $head_repo and
+          (.head_repository.id | type == "number") and
+          .head_repository.id == $head_repo_id and
+          (.id | type == "number") and
+          .id > 0 and
+          .status == "completed" and
+          .conclusion == "failure" and
+          (.created_at | type == "string") and
+          (.created_at | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")) and
+          .created_at <= $before and
+          (.pull_requests | type) == "array" and
+          (.pull_requests | length > 0) and
+          any(.pull_requests[]?;
+            (.number | type == "number") and
+            (.number | tostring) == $pr and
+            .base.ref == $base and
+            .base.repo.full_name == $repo and
+            (.base.repo.id | type == "number") and
+            .base.repo.id == $repo_id and
+            .head.ref == $head_ref and
+            .head.sha == $sha and
+            (.head.repo.id | type == "number") and
+            .head.repo.id == $head_repo_id and
+            .head.repo.full_name == $head_repo and
+            (if (.base.sha | type) == "string"
+             then ((.base.sha | test("^[0-9a-f]{40}$") | not) or .base.sha != $base_sha)
+             else true
+             end)
+          )
+        )
+    ] | length' <<<"${runs_json}")"
+  [[ "${stale_base_count}" =~ ^[0-9]+$ ]] || fail "Could not count stale CLA workflow base associations"
+  if (( stale_base_count > 0 )); then
+    fail "The failed CLA check is bound to an outdated or malformed pull request base SHA; push a new commit before requesting a rerun"
   fi
   # A run from before this workflow generation cannot be safely
   # rerun: GitHub reruns the old workflow revision, which could
@@ -705,6 +765,7 @@ if [[ "${candidate_count}" == "0" ]]; then
     --argjson head_repo_id "${head_repo_id}" \
     --argjson repo_id "${repo_id}" \
     --arg base "${TARGET_BASE_REF}" \
+    --arg base_sha "${base_sha}" \
     --arg workflow_name "${CLA_WORKFLOW_NAME}" \
     --arg before "${COMMENT_CREATED_AT}" \
     'def run_binds_to_pr:
@@ -717,19 +778,17 @@ if [[ "${candidate_count}" == "0" ]]; then
          elif ($prs | length) == 0 then
            .head_sha == $sha and
            .head_branch == $head_ref and
-           (
-             ((.head_repository | type) == "object" and
-              .head_repository.full_name == $head_repo and
-              (.head_repository.id | type == "number") and
-              .head_repository.id == $head_repo_id) or
-             (.head_repository == null and
-              $head_repo == $repo and
-              $head_repo_id == $repo_id)
-           )
+           (.head_repository | type) == "object" and
+           .head_repository.full_name == $head_repo and
+           (.head_repository.id | type == "number") and
+           .head_repository.id == $head_repo_id
          else any($prs[]?;
            (.number | type == "number") and
            (.number | tostring) == $pr and
            .base.ref == $base and
+           (.base.sha | type == "string") and
+           (.base.sha | test("^[0-9a-f]{40}$")) and
+           .base.sha == $base_sha and
            ((.base.repo.full_name // "") == "" or
             .base.repo.full_name == $repo) and
            (.base.repo.id | type == "number") and
@@ -908,13 +967,12 @@ validate_run_source_binding() {
   [[ "${pull_request_count}" =~ ^[0-9]+$ ]] || fail "The workflow run pull request association count is invalid"
   if (( pull_request_count == 0 )); then
     # GitHub may omit pull_requests on a pull_request_target run. A complete
-    # source repository plus the live PR base SHA binds the run directly. If
-    # either field is unavailable or the execution SHA differs, use the
-    # independent source-head check fallback below. A branch name alone never
-    # authorizes the rerun.
+    # source repository plus the live PR base SHA binds the run directly. A
+    # null source repository cannot identify which fork produced the branch,
+    # so it is never eligible for the source-head fallback.
     head_repository_type="$(jq -r 'if .head_repository == null then "null" else (.head_repository | type) end' <<<"${run_payload}")"
     case "${head_repository_type}" in
-      null) ;;
+      null) fail "The workflow run source repository metadata is missing" ;;
       object)
         jq -e \
           --arg head_repo "${head_repo}" \
@@ -927,14 +985,15 @@ validate_run_source_binding() {
       *) fail "The workflow run source repository metadata is malformed" ;;
     esac
     validate_live_open_head_association
-    if [[ "${head_repository_type}" == object && "${execution_sha}" == "${base_sha}" ]]; then
+    if [[ "${execution_sha}" == "${base_sha}" ]]; then
       CHECK_LOOKUP_SHA="${execution_sha}"
       CHECK_EXPECTED_SHA="${execution_sha}"
       CHECK_BINDING_MODE=execution
     else
-      # Fork runs can omit head_repository, and some pull_request_target API
-      # responses expose a non-base execution SHA. In either case, bind the
-      # failed check to the immutable live source head and its exact job URL.
+      # Some pull_request_target API responses expose a non-base execution
+      # SHA. Bind those runs to the immutable live source head and its exact
+      # job URL only after the complete repository metadata and live PR
+      # association above have been verified.
       CHECK_LOOKUP_SHA="${head_sha}"
       CHECK_EXPECTED_SHA="${head_sha}"
       CHECK_BINDING_MODE=source-fallback
@@ -962,6 +1021,7 @@ validate_exact_run_payload() {
     --arg workflow_id "${workflow_id}" \
     --arg workflow_name "${CLA_WORKFLOW_NAME}" \
     --arg base "${TARGET_BASE_REF}" \
+    --arg base_sha "${base_sha}" \
     --arg before "${COMMENT_CREATED_AT}" '
       def run_binds_to_pr:
         (.pull_requests) as $raw_prs
@@ -970,18 +1030,19 @@ validate_exact_run_payload() {
            else null end) as $prs
         | if $prs == null then false
           elif ($prs | length) == 0 then
+            .head_sha == $base_sha and
             .head_branch == $head_ref and
-            (
-              ((.head_repository | type) == "object" and
-               .head_repository.full_name == $head_repo and
-               (.head_repository.id | type == "number") and
-               .head_repository.id == $head_repo_id) or
-              .head_repository == null
-            )
+            (.head_repository | type) == "object" and
+            .head_repository.full_name == $head_repo and
+            (.head_repository.id | type == "number") and
+            .head_repository.id == $head_repo_id
           else any($prs[]?;
             (.number | type == "number") and
             (.number | tostring) == $pr and
             .base.ref == $base and
+            (.base.sha | type == "string") and
+            (.base.sha | test("^[0-9a-f]{40}$")) and
+            .base.sha == $base_sha and
             ((.base.repo.full_name // "") == "" or
              .base.repo.full_name == $repo) and
             (.base.repo.id | type == "number") and
@@ -1007,12 +1068,10 @@ validate_exact_run_payload() {
       .conclusion == "failure" and
       .head_sha == $run_sha and
       .head_branch == $run_head_branch and
-      ((has("head_repository") | not) or
-       .head_repository == null or
-       ((.head_repository | type) == "object" and
-        .head_repository.full_name == $head_repo and
-        (.head_repository.id | type == "number") and
-        .head_repository.id == $head_repo_id)) and
+      (.head_repository | type) == "object" and
+      .head_repository.full_name == $head_repo and
+      (.head_repository.id | type == "number") and
+      .head_repository.id == $head_repo_id and
       (.created_at | type == "string") and
       (.created_at | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")) and
       .created_at <= $before and
