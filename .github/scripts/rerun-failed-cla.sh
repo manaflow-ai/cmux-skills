@@ -798,11 +798,12 @@ CHECK_BINDING_MODE=""
 
 fetch_check_runs_for_sha() {
   local commit_sha="$1"
+  local check_name="$2"
   local response page_count page2 page2_count page=1
   response="$(gh_api_bounded \
     --method GET \
     --header 'Accept: application/vnd.github+json' \
-    --raw-field check_name="${CLA_ASSISTANT_JOB}" \
+    --raw-field check_name="${check_name}" \
     --raw-field app_id="${CLA_ACTION_APP_ID}" \
     --raw-field filter=all \
     --raw-field per_page=100 \
@@ -817,7 +818,7 @@ fetch_check_runs_for_sha() {
     page2="$(gh_api_bounded \
       --method GET \
       --header 'Accept: application/vnd.github+json' \
-      --raw-field check_name="${CLA_ASSISTANT_JOB}" \
+      --raw-field check_name="${check_name}" \
       --raw-field app_id="${CLA_ACTION_APP_ID}" \
       --raw-field filter=all \
       --raw-field per_page=100 \
@@ -839,11 +840,12 @@ assert_failed_check_binding() {
   local expected_run_id="$2"
   local expected_job_id="$3"
   local expected_check_sha="$4"
+  local expected_check_name="$5"
   local details_url="https://github.com/${GH_REPO}/actions/runs/${expected_run_id}/job/${expected_job_id}"
   local matching_count
   [[ "${expected_check_sha}" =~ ^[0-9a-f]{40}$ ]] || return 1
   matching_count="$(jq -r \
-    --arg job "${CLA_ASSISTANT_JOB}" \
+    --arg job "${expected_check_name}" \
     --arg sha "${expected_check_sha}" \
     --arg url "${details_url}" \
     --argjson app_id "${CLA_ACTION_APP_ID}" '
@@ -872,14 +874,15 @@ assert_failed_check_binding() {
 validate_failed_check_binding() {
   local expected_run_id="$1"
   local expected_job_id="$2"
+  local expected_check_name="$3"
   local check_sha="${CHECK_LOOKUP_SHA}"
   local expected_check_sha="${CHECK_EXPECTED_SHA}"
   local checks
   [[ "${check_sha}" =~ ^[0-9a-f]{40}$ && "${expected_check_sha}" =~ ^[0-9a-f]{40}$ ]] ||
     fail "The selected CLA run has no valid check binding context"
-  checks="$(fetch_check_runs_for_sha "${check_sha}")" ||
+  checks="$(fetch_check_runs_for_sha "${check_sha}" "${expected_check_name}")" ||
     fail "Could not query checks for the selected CLA execution"
-  assert_failed_check_binding "${checks}" "${expected_run_id}" "${expected_job_id}" "${expected_check_sha}" ||
+  assert_failed_check_binding "${checks}" "${expected_run_id}" "${expected_job_id}" "${expected_check_sha}" "${expected_check_name}" ||
     if [[ "${CHECK_BINDING_MODE}" == source-fallback ]]; then
       fail "No failed CLA check is bound to the exact pull request source head and selected job"
     else
@@ -1069,6 +1072,8 @@ fetch_jobs_for_run() {
 }
 
 jobs_json="$(fetch_jobs_for_run "${run_id}")" || fail "Could not query and validate jobs for the selected CLA run"
+RERUN_TARGET_JOB_NAME=""
+RERUN_FAILED_JOBS=false
 
 # Validate every failed job before granting the state-changing API call. The
 # v3 writer, required result, and migration compatibility jobs are the only
@@ -1079,7 +1084,8 @@ jobs_json="$(fetch_jobs_for_run "${run_id}")" || fail "Could not query and valid
 validate_failed_job_set() {
   local payload="$1"
   local all_jobs_json failed_jobs_json failed_count nonfailure_count
-  local unexpected_count assistant_count assistant_valid_count writer_count writer_valid_count
+  local unexpected_count assistant_count assistant_valid_count assistant_failed_count assistant_success_count
+  local writer_count writer_valid_count
   local compatibility_count compatibility_valid_count
   if ! all_jobs_json="$(jq -c '[.[] | .jobs[]?]' <<<"${payload}")"; then
     fail "Could not flatten jobs for the selected CLA run"
@@ -1123,9 +1129,18 @@ validate_failed_job_set() {
     <<<"${failed_jobs_json}")"
   (( unexpected_count == 0 )) || fail "The selected CLA run contains an unexpected failed job; refusing to rerun it"
 
+  # The v3 job is the generation anchor even when only the compatibility
+  # mirror failed. Validate exactly one current-generation v3 job across the
+  # whole run, then select a failed v3 or compatibility job below.
   if ! assistant_count="$(jq -r \
       --arg assistant_job "${CLA_ASSISTANT_JOB}" \
-      '[.[] | select(.name == $assistant_job)] | length' <<<"${failed_jobs_json}")" ||
+      '[.[] | select(.name == $assistant_job)] | length' <<<"${all_jobs_json}")" ||
+     ! assistant_failed_count="$(jq -r \
+       --arg assistant_job "${CLA_ASSISTANT_JOB}" \
+       '[.[] | select(.name == $assistant_job)] | length' <<<"${failed_jobs_json}")" ||
+     ! assistant_success_count="$(jq -r \
+       --arg assistant_job "${CLA_ASSISTANT_JOB}" \
+       '[.[] | select(.name == $assistant_job and .conclusion == "success")] | length' <<<"${all_jobs_json}")" ||
      ! assistant_valid_count="$(jq -r \
        --arg run_id "${run_id}" \
        --arg run_sha "${run_execution_sha}" \
@@ -1155,12 +1170,18 @@ validate_failed_job_set() {
             .name == $generation_step and
             .status == "completed"
           )
-       )] | length' <<<"${failed_jobs_json}")"; then
-    fail "Could not validate failed CLA Assistant v3 jobs"
+       )] | length' <<<"${all_jobs_json}")"; then
+    fail "Could not validate CLA Assistant v3 generation anchor"
   fi
-  [[ "${assistant_count}" =~ ^[0-9]+$ && "${assistant_valid_count}" =~ ^[0-9]+$ ]] || fail "Could not count failed CLA Assistant v3 jobs"
-  (( assistant_count == 1 )) || fail "Expected exactly one failed CLA Assistant v3 job"
+  [[ "${assistant_count}" =~ ^[0-9]+$ && "${assistant_failed_count}" =~ ^[0-9]+$ &&
+     "${assistant_success_count}" =~ ^[0-9]+$ && "${assistant_valid_count}" =~ ^[0-9]+$ ]] ||
+    fail "Could not count CLA Assistant v3 jobs"
+  (( assistant_count == 1 )) || fail "Expected exactly one CLA Assistant v3 generation anchor"
   (( assistant_valid_count == 1 )) || fail "The selected failed CLA check was created by an older workflow generation. Push a new commit or close and reopen this pull request to create a current-generation CLA check, then post the exact signing declaration again."
+  (( assistant_failed_count <= 1 )) || fail "The selected CLA run contains multiple failed CLA Assistant v3 jobs"
+  if (( assistant_failed_count == 0 && assistant_success_count != 1 )); then
+    fail "The CLA Assistant v3 generation anchor did not complete successfully"
+  fi
 
   if ! writer_count="$(jq -r \
       --arg writer_job "${CLA_WRITER_JOB}" \
@@ -1227,6 +1248,16 @@ validate_failed_job_set() {
   [[ "${compatibility_count}" =~ ^[0-9]+$ && "${compatibility_valid_count}" =~ ^[0-9]+$ ]] || fail "Could not count failed CLA compatibility jobs"
   (( compatibility_count <= 1 )) || fail "The selected CLA run contains multiple failed compatibility jobs"
   (( compatibility_valid_count == compatibility_count )) || fail "The failed CLA compatibility job is malformed or bound to a different source"
+  if (( assistant_failed_count == 1 )); then
+    RERUN_TARGET_JOB_NAME="${CLA_ASSISTANT_JOB}"
+  elif (( compatibility_count == 1 && writer_count == 0 )); then
+    # A transient compatibility-mirror failure can block a repository that
+    # still requires the legacy context during migration. The successful v3
+    # job above remains the independently validated generation anchor.
+    RERUN_TARGET_JOB_NAME="${CLA_COMPATIBILITY_JOB}"
+  else
+    fail "The selected CLA run has no eligible failed result job"
+  fi
   if (( writer_count == 1 || compatibility_count == 1 )); then
     RERUN_FAILED_JOBS=true
   else
@@ -1234,12 +1265,15 @@ validate_failed_job_set() {
   fi
 }
 validate_failed_job_set "${jobs_json}"
-# Select the sole current-generation assistant job from a validated job set.
-select_cla_job() {
+# Select the sole failed result job from a validated job set. The v3 job
+# carries the generation marker. A compatibility-only failure uses the
+# separately validated successful v3 job as its generation anchor.
+select_rerun_job() {
   local payload="$1"
   jq -c \
     --arg run_id "${run_id}" \
     --arg run_sha "${run_execution_sha}" \
+    --arg target_job "${RERUN_TARGET_JOB_NAME}" \
     --arg assistant_job "${CLA_ASSISTANT_JOB}" \
     --arg workflow_name "${CLA_WORKFLOW_NAME}" \
     --arg workflow_id "${workflow_id}" \
@@ -1249,7 +1283,7 @@ select_cla_job() {
     '[.[] | .jobs[]?
       | select(
           (.run_id | tostring) == $run_id and
-          .name == $assistant_job and
+          .name == $target_job and
           ((has("workflow_name") | not) or
            ((.workflow_name | type) == "string" and
             .workflow_name == $workflow_name)) and
@@ -1265,23 +1299,25 @@ select_cla_job() {
             (.head_repository.full_name == $head_repo and
              .head_repository.id == $head_repo_id)
           ) and
-          any(.steps[]?;
-            .name == $generation_step and
-            .status == "completed"
-          )
+          ($target_job != $assistant_job or
+           any(.steps[]?;
+             .name == $generation_step and
+             .status == "completed"
+           ))
         )
     ]
     | if length == 1 then .[0] else empty end
   ' <<<"${payload}"
 }
 
-# Validate one exact assistant job for every discovery and final re-read.
+# Validate the exact failed result job for every discovery and final re-read.
 validate_exact_job_payload() {
   local payload="$1"
   jq -e \
     --arg job_id "${job_id}" \
     --arg run_id "${run_id}" \
     --arg run_sha "${run_execution_sha}" \
+    --arg target_job "${RERUN_TARGET_JOB_NAME}" \
     --arg assistant_job "${CLA_ASSISTANT_JOB}" \
     --arg workflow_name "${CLA_WORKFLOW_NAME}" \
     --arg workflow_id "${workflow_id}" \
@@ -1292,7 +1328,7 @@ validate_exact_job_payload() {
       .id == ($job_id | tonumber) and
       (.run_id | type == "number") and
       .run_id == ($run_id | tonumber) and
-      .name == $assistant_job and
+      .name == $target_job and
       ((has("workflow_name") | not) or
        ((.workflow_name | type) == "string" and
         .workflow_name == $workflow_name)) and
@@ -1310,30 +1346,30 @@ validate_exact_job_payload() {
          .head_repository.full_name == $head_repo and
          .head_repository.id == $head_repo_id)
       ) and
-      any(.steps[]?;
-        .name == $generation_step and
-        .status == "completed"
-      )
+      ($target_job != $assistant_job or
+       any(.steps[]?;
+         .name == $generation_step and
+         .status == "completed"
+       ))
     ' <<<"${payload}" >/dev/null
 }
 
-if ! cla_job_json="$(select_cla_job "${jobs_json}")"; then
-  fail "Could not validate CLA Assistant v3 job data"
+target_job_name="${RERUN_TARGET_JOB_NAME}"
+[[ -n "${target_job_name}" ]] || fail "The selected CLA run has no eligible failed result job"
+if ! cla_job_json="$(select_rerun_job "${jobs_json}")"; then
+  fail "Could not validate the selected CLA result job"
 fi
 if [[ -z "${cla_job_json}" ]]; then
-  # The run matched the current PR and failed, but no job carried
-  # this workflow generation marker. It is an old or malformed
-  # generation and must not be replayed with the privileged token.
-  fail "The selected failed CLA check was created by an older workflow generation. Push a new commit or close and reopen this pull request to create a current-generation CLA check, then post the exact signing declaration again."
+  fail "The selected failed CLA result job is malformed or bound to an older workflow generation"
 fi
 job_id="$(jq -r '.id // empty' <<<"${cla_job_json}")"
 [[ "${job_id}" =~ ^[1-9][0-9]*$ ]] || fail "The selected CLA job ID is invalid"
-validate_failed_check_binding "${run_id}" "${job_id}"
+validate_failed_check_binding "${run_id}" "${job_id}" "${target_job_name}"
 
 # Re-read the individual job. The jobs list is discovery only, just
 # like the workflow-run list above.
-job_json="$(gh_api_bounded "repos/${GH_REPO}/actions/jobs/${job_id}" 2>/dev/null)" || fail "Could not query the selected CLA Assistant v3 job"
-validate_exact_job_payload "${job_json}" || fail "The selected CLA Assistant v3 job no longer matches the failed job in this run"
+job_json="$(gh_api_bounded "repos/${GH_REPO}/actions/jobs/${job_id}" 2>/dev/null)" || fail "Could not query the selected CLA result job"
+validate_exact_job_payload "${job_json}" || fail "The selected CLA result job no longer matches the failed job in this run"
 
 # Recheck both resources immediately before the state-changing call.
 # This prevents a push or a concurrent rerun from making the job
@@ -1341,14 +1377,15 @@ validate_exact_job_payload "${job_json}" || fail "The selected CLA Assistant v3 
 latest_pr_json="$(gh_api_bounded "repos/${GH_REPO}/pulls/${PR_NUMBER}" 2>/dev/null)" || fail "Could not recheck the pull request before rerun"
 validate_exact_pr_snapshot "${latest_pr_json}" || fail "The pull request changed while selecting the CLA job"
 final_job_json="$(gh_api_bounded "repos/${GH_REPO}/actions/jobs/${job_id}" 2>/dev/null)" || fail "Could not recheck the selected CLA job"
-validate_exact_job_payload "${final_job_json}" || fail "The exact failed CLA Assistant v3 job is no longer eligible"
+validate_exact_job_payload "${final_job_json}" || fail "The exact failed CLA result job is no longer eligible"
 
 # Re-fetch the whole job set immediately before the state-changing call. This
 # catches a newly cancelled or unrelated failed job that could otherwise be
 # pulled into a failed-jobs rerun after the first validation.
 final_jobs_json="$(fetch_jobs_for_run "${run_id}")" || fail "Could not recheck and validate jobs for the selected CLA run"
 validate_failed_job_set "${final_jobs_json}"
-final_cla_job_json="$(select_cla_job "${final_jobs_json}")" || fail "Could not select the final CLA Assistant v3 job"
+[[ "${RERUN_TARGET_JOB_NAME}" == "${target_job_name}" ]] || fail "The failed CLA result job changed while preparing the rerun"
+final_cla_job_json="$(select_rerun_job "${final_jobs_json}")" || fail "Could not select the final CLA result job"
 final_job_id="$(jq -r '.id // empty' <<<"${final_cla_job_json}")"
 [[ "${final_job_id}" == "${job_id}" ]] || fail "The selected CLA job changed while preparing the rerun"
 
@@ -1363,11 +1400,11 @@ validate_exact_run_payload "${final_run_json}" || fail "The selected CLA run cha
 validate_run_source_binding "${final_run_json}"
 final_job_json="$(gh_api_bounded "repos/${GH_REPO}/actions/jobs/${job_id}" 2>/dev/null)" || fail "Could not recheck the selected CLA job before rerun"
 validate_exact_job_payload "${final_job_json}" || fail "The selected CLA job changed before rerun"
-validate_failed_check_binding "${run_id}" "${job_id}"
+validate_failed_check_binding "${run_id}" "${job_id}" "${target_job_name}"
 
 if [[ "${RERUN_FAILED_JOBS}" == true ]]; then
   rerun_endpoint="repos/${GH_REPO}/actions/runs/${run_id}/rerun-failed-jobs"
-  rerun_description="failed CLA v3 jobs (writer, assistant, and compatibility)"
+  rerun_description="failed CLA result jobs (writer, v3, and compatibility)"
 else
   rerun_endpoint="repos/${GH_REPO}/actions/jobs/${job_id}/rerun"
   rerun_description="CLA job ${job_id}"

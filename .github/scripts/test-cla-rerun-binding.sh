@@ -72,6 +72,9 @@ gh() {
   run_head_repository="{\"id\":200,\"full_name\":\"contributor/${GH_REPO#*/}\"}"
   local check_app_id=15368
   local check_details="https://github.com/${GH_REPO}/actions/runs/400/job/500"
+  local check_name='CLA Assistant v3'
+  local assistant_generation='CLA generation v2.2-action-212a0f2dd659b24b48a30ba35966e06dc41736af'
+  local compatibility_only=false
   local check_lookup_sha="${base_sha}"
   local check_head_sha="${base_sha}"
   local repo_prefix="repos/${GH_REPO}"
@@ -96,6 +99,22 @@ gh() {
       check_app_id=999
       ;;
     wrong-details)
+      check_details="https://github.com/${GH_REPO}/actions/runs/400/job/999"
+      ;;
+    compatibility-only)
+      compatibility_only=true
+      check_name='CLA Assistant'
+      check_details="https://github.com/${GH_REPO}/actions/runs/400/job/501"
+      ;;
+    compatibility-stale-generation)
+      compatibility_only=true
+      check_name='CLA Assistant'
+      check_details="https://github.com/${GH_REPO}/actions/runs/400/job/501"
+      assistant_generation='CLA generation v2.1-action-old'
+      ;;
+    compatibility-wrong-details)
+      compatibility_only=true
+      check_name='CLA Assistant'
       check_details="https://github.com/${GH_REPO}/actions/runs/400/job/999"
       ;;
     suffix-path)
@@ -130,10 +149,19 @@ gh() {
       jq -nc --arg path "${run_path}" --arg name "${run_name}" --arg sha "${run_sha}" --argjson prs "${run_prs}" --argjson head_repo "${run_head_repository}" '{id:400,workflow_id:300,name:$name,path:$path,event:"pull_request_target",status:"completed",conclusion:"failure",head_sha:$sha,head_branch:"feature",head_repository:$head_repo,pull_requests:$prs,created_at:"2026-09-01T07:00:00Z"}'
       ;;
     "${repo_prefix}/actions/runs/400/jobs")
-      jq -nc --arg sha "${run_sha}" '{jobs:[{id:500,run_id:400,name:"CLA Assistant v3",workflow_name:"CLA Assistant v3",workflow_id:300,status:"completed",conclusion:"failure",head_sha:$sha,head_repository:null,steps:[{name:"CLA generation v2.2-action-212a0f2dd659b24b48a30ba35966e06dc41736af",status:"completed",conclusion:"failure"}]}]}'
+      if [[ "${compatibility_only}" == true ]]; then
+        jq -nc --arg sha "${run_sha}" --arg generation "${assistant_generation}" '{jobs:[{id:500,run_id:400,name:"CLA Assistant v3",workflow_name:"CLA Assistant v3",workflow_id:300,status:"completed",conclusion:"success",head_sha:$sha,head_repository:null,steps:[{name:$generation,status:"completed",conclusion:"success"}]},{id:501,run_id:400,name:"CLA Assistant",workflow_name:"CLA Assistant v3",workflow_id:300,status:"completed",conclusion:"failure",head_sha:$sha,head_repository:null,steps:[{name:"Mirror CLA Assistant compatibility result",status:"completed",conclusion:"failure"}]}]}'
+      else
+        jq -nc --arg sha "${run_sha}" --arg generation "${assistant_generation}" '{jobs:[{id:500,run_id:400,name:"CLA Assistant v3",workflow_name:"CLA Assistant v3",workflow_id:300,status:"completed",conclusion:"failure",head_sha:$sha,head_repository:null,steps:[{name:$generation,status:"completed",conclusion:"failure"}]}]}'
+      fi
       ;;
     "${repo_prefix}/actions/jobs/500")
-      jq -nc --arg sha "${run_sha}" '{id:500,run_id:400,name:"CLA Assistant v3",workflow_name:"CLA Assistant v3",workflow_id:300,status:"completed",conclusion:"failure",head_sha:$sha,head_repository:null,steps:[{name:"CLA generation v2.2-action-212a0f2dd659b24b48a30ba35966e06dc41736af",status:"completed",conclusion:"failure"}]}'
+      local assistant_conclusion='failure'
+      [[ "${compatibility_only}" == true ]] && assistant_conclusion='success'
+      jq -nc --arg sha "${run_sha}" --arg generation "${assistant_generation}" --arg conclusion "${assistant_conclusion}" '{id:500,run_id:400,name:"CLA Assistant v3",workflow_name:"CLA Assistant v3",workflow_id:300,status:"completed",conclusion:$conclusion,head_sha:$sha,head_repository:null,steps:[{name:$generation,status:"completed",conclusion:$conclusion}]}'
+      ;;
+    "${repo_prefix}/actions/jobs/501")
+      jq -nc --arg sha "${run_sha}" '{id:501,run_id:400,name:"CLA Assistant",workflow_name:"CLA Assistant v3",workflow_id:300,status:"completed",conclusion:"failure",head_sha:$sha,head_repository:null,steps:[{name:"Mirror CLA Assistant compatibility result",status:"completed",conclusion:"failure"}]}'
       ;;
     "${repo_prefix}/commits/"*/check-runs)
       local commit_prefix="${repo_prefix}/commits/"
@@ -143,7 +171,7 @@ gh() {
         echo "helper queried ${requested_sha}, expected ${check_lookup_sha}" >&2
         return 1
       }
-      jq -nc --arg details "${check_details}" --argjson app_id "${check_app_id}" --arg head_sha "${check_head_sha}" '{total_count:1,check_runs:[{id:9000,name:"CLA Assistant v3",status:"completed",conclusion:"failure",head_sha:$head_sha,app:{id:$app_id,slug:"github-actions"},details_url:$details}]}'
+      jq -nc --arg details "${check_details}" --argjson app_id "${check_app_id}" --arg head_sha "${check_head_sha}" --arg name "${check_name}" '{total_count:1,check_runs:[{id:9000,name:$name,status:"completed",conclusion:"failure",head_sha:$head_sha,app:{id:$app_id,slug:"github-actions"},details_url:$details}]}'
       ;;
     *) echo "unexpected endpoint ${endpoint}" >&2; return 1 ;;
   esac
@@ -151,7 +179,7 @@ gh() {
 export -f gh
 
 run_case() {
-  local mode="$1" expected_status="$2" expected_posts="$3"
+  local mode="$1" expected_status="$2" expected_posts="$3" expected_endpoint="${4:-}"
   : >"${work}/posts"
   set +e
   output="$(FAKE_MODE="${mode}" POSTS_FILE="${work}/posts" bash "${script}" 2>&1)"
@@ -160,13 +188,22 @@ run_case() {
   posts="$(wc -l <"${work}/posts" | tr -d ' ')"
   [[ "${status}" == "${expected_status}" ]] || { printf 'FAIL %s: status %s\n%s\n' "${mode}" "${status}" "${output}" >&2; exit 1; }
   [[ "${posts}" == "${expected_posts}" ]] || { printf 'FAIL %s: posts %s\n%s\n' "${mode}" "${posts}" "${output}" >&2; exit 1; }
+  if [[ "${expected_posts}" == 1 ]]; then
+    [[ "$(cat "${work}/posts")" == "${expected_endpoint}" ]] || {
+      printf 'FAIL %s: endpoint %s\n%s\n' "${mode}" "$(cat "${work}/posts")" "${output}" >&2
+      exit 1
+    }
+  fi
   printf 'PASS %s\n' "${mode}"
 }
 
-run_case normal 0 1
-run_case base-empty 0 1
-run_case fallback-null 0 1
+run_case normal 0 1 "repos/${GH_REPO}/actions/jobs/500/rerun"
+run_case base-empty 0 1 "repos/${GH_REPO}/actions/jobs/500/rerun"
+run_case fallback-null 0 1 "repos/${GH_REPO}/actions/jobs/500/rerun"
 run_case fallback-base-mismatch 1 0
 run_case wrong-app 1 0
 run_case wrong-details 1 0
 run_case suffix-path 0 0
+run_case compatibility-only 0 1 "repos/${GH_REPO}/actions/runs/400/rerun-failed-jobs"
+run_case compatibility-stale-generation 1 0
+run_case compatibility-wrong-details 1 0
