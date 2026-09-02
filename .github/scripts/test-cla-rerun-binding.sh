@@ -6,7 +6,19 @@ script="${repo_root}/.github/scripts/rerun-failed-cla.sh"
 work="$(mktemp -d)"
 trap 'rm -rf -- "${work}"' EXIT
 
-export GH_REPO=manaflow-ai/cmux-skills
+remote_url="${TEST_GH_REPO:-$(git -C "${repo_root}" config --get remote.origin.url || true)}"
+case "${remote_url}" in
+  https://github.com/*|git@github.com:*)
+    GH_REPO="${remote_url#https://github.com/}"
+    GH_REPO="${GH_REPO#git@github.com:}"
+    GH_REPO="${GH_REPO%.git}"
+    ;;
+  *)
+    printf 'Could not derive an in-org test repository from origin: %s\n' "${remote_url}" >&2
+    exit 1
+    ;;
+esac
+export GH_REPO
 export EVENT_NAME=issue_comment
 export ISSUE_NUMBER=123
 export PR_NUMBER=123
@@ -48,56 +60,88 @@ gh() {
     printf '%s\n' "${endpoint}" >>"${POSTS_FILE}"
     return 0
   fi
-  local run_sha=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  local source_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  local base_sha=cccccccccccccccccccccccccccccccccccccccc
+  local mismatch_sha=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  local run_sha="${base_sha}"
   local run_path=.github/workflows/cla.yml
   local run_name='CLA Assistant v3'
-  local run_prs='[{"number":123,"base":{"ref":"main","sha":"cccccccccccccccccccccccccccccccccccccccc","repo":{"id":100,"full_name":"manaflow-ai/cmux-skills"}},"head":{"ref":"feature","sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","repo":{"id":200,"full_name":"contributor/cmux-skills"}}}]'
+  local run_prs
+  run_prs="[{\"number\":123,\"base\":{\"ref\":\"main\",\"sha\":\"${base_sha}\",\"repo\":{\"id\":100,\"full_name\":\"${GH_REPO}\"}},\"head\":{\"ref\":\"feature\",\"sha\":\"${source_sha}\",\"repo\":{\"id\":200,\"full_name\":\"contributor/${GH_REPO#*/}\"}}}]"
   local run_head_repository='{"id":200,"full_name":"contributor/cmux-skills"}'
+  run_head_repository="{\"id\":200,\"full_name\":\"contributor/${GH_REPO#*/}\"}"
   local check_app_id=15368
   local check_details='https://github.com/manaflow-ai/cmux-skills/actions/runs/400/job/500'
-  if [[ "${FAKE_MODE:-}" == fallback-null ]]; then
-    run_prs='[]'
-    run_head_repository=null
-  elif [[ "${FAKE_MODE:-}" == wrong-app ]]; then
-    check_app_id=999
-  elif [[ "${FAKE_MODE:-}" == wrong-details ]]; then
-    check_details='https://github.com/manaflow-ai/cmux-skills/actions/runs/400/job/999'
-  elif [[ "${FAKE_MODE:-}" == suffix-path ]]; then
-    run_path=.github/workflows/cla.yml@main
-  fi
+  local check_lookup_sha="${base_sha}"
+  local check_head_sha="${base_sha}"
+  case "${FAKE_MODE:-normal}" in
+    base-empty)
+      run_prs='[]'
+      ;;
+    fallback-null)
+      run_prs='[]'
+      run_head_repository=null
+      run_sha="${mismatch_sha}"
+      check_lookup_sha="${source_sha}"
+      check_head_sha="${source_sha}"
+      ;;
+    fallback-base-mismatch)
+      run_prs='[]'
+      run_sha="${mismatch_sha}"
+      check_lookup_sha="${source_sha}"
+      check_head_sha="${mismatch_sha}"
+      ;;
+    wrong-app)
+      check_app_id=999
+      ;;
+    wrong-details)
+      check_details="https://github.com/${GH_REPO}/actions/runs/400/job/999"
+      ;;
+    suffix-path)
+      run_path=.github/workflows/cla.yml@main
+      ;;
+    normal) ;;
+    *) echo "unexpected fake mode ${FAKE_MODE:-}" >&2; return 1 ;;
+  esac
   case "${endpoint}" in
-    repos/manaflow-ai/cmux-skills/issues/123)
-      jq -nc '{state:"open",pull_request:{url:"https://api.github.com/repos/manaflow-ai/cmux-skills/pulls/123"}}'
+    repos/${GH_REPO}/issues/123)
+      jq -nc --arg url "https://api.github.com/repos/${GH_REPO}/pulls/123" '{state:"open",pull_request:{url:$url}}'
       ;;
-    repos/manaflow-ai/cmux-skills/issues/comments/900)
-      jq -nc --arg body "${COMMENT_BODY}" --argjson id "${COMMENT_AUTHOR_ID}" --arg login "${COMMENT_AUTHOR_LOGIN}" --arg type "${COMMENT_AUTHOR_TYPE}" --arg created "${COMMENT_CREATED_AT}" '{issue_url:"https://api.github.com/repos/manaflow-ai/cmux-skills/issues/123",body:$body,user:{id:$id,login:$login,type:$type},created_at:$created,updated_at:$created}'
+    repos/${GH_REPO}/issues/comments/900)
+      jq -nc --arg issue_url "https://api.github.com/repos/${GH_REPO}/issues/123" --arg body "${COMMENT_BODY}" --argjson id "${COMMENT_AUTHOR_ID}" --arg login "${COMMENT_AUTHOR_LOGIN}" --arg type "${COMMENT_AUTHOR_TYPE}" --arg created "${COMMENT_CREATED_AT}" '{issue_url:$issue_url,body:$body,user:{id:$id,login:$login,type:$type},created_at:$created,updated_at:$created}'
       ;;
-    repos/manaflow-ai/cmux-skills/pulls/123)
-      jq -nc '{number:123,state:"open",user:{id:300,login:"contributor"},base:{ref:"main",sha:"cccccccccccccccccccccccccccccccccccccccc",repo:{id:100,full_name:"manaflow-ai/cmux-skills"}},head:{ref:"feature",sha:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",repo:{id:200,full_name:"contributor/cmux-skills"}}}'
+    repos/${GH_REPO}/pulls/123)
+      jq -nc --arg repo "${GH_REPO}" --arg source_sha "${source_sha}" --arg base_sha "${base_sha}" --arg head_repo "contributor/${GH_REPO#*/}" '{number:123,state:"open",user:{id:300,login:"contributor"},base:{ref:"main",sha:$base_sha,repo:{id:100,full_name:$repo}},head:{ref:"feature",sha:$source_sha,repo:{id:200,full_name:$head_repo}}}'
       ;;
-    repos/manaflow-ai/cmux-skills/commits/*/pulls)
+    repos/${GH_REPO}/commits/*/pulls)
       printf '[]\n'
       ;;
-    repos/manaflow-ai/cmux-skills/pulls)
-      jq -nc '{number:123,state:"open",base:{ref:"main",sha:"cccccccccccccccccccccccccccccccccccccccc",repo:{id:100,full_name:"manaflow-ai/cmux-skills"}},head:{ref:"feature",sha:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",repo:{id:200,full_name:"contributor/cmux-skills"}}}' | jq -sc .
+    repos/${GH_REPO}/pulls)
+      jq -nc --arg repo "${GH_REPO}" --arg source_sha "${source_sha}" --arg base_sha "${base_sha}" --arg head_repo "contributor/${GH_REPO#*/}" '{number:123,state:"open",base:{ref:"main",sha:$base_sha,repo:{id:100,full_name:$repo}},head:{ref:"feature",sha:$source_sha,repo:{id:200,full_name:$head_repo}}}' | jq -sc .
       ;;
-    repos/manaflow-ai/cmux-skills/actions/workflows)
+    repos/${GH_REPO}/actions/workflows)
       jq -nc '{workflows:[{id:300,path:".github/workflows/cla.yml",state:"active"}]}'
       ;;
-    repos/manaflow-ai/cmux-skills/actions/workflows/300/runs)
+    repos/${GH_REPO}/actions/workflows/300/runs)
       jq -nc --arg path "${run_path}" --arg name "${run_name}" --arg sha "${run_sha}" --argjson prs "${run_prs}" --argjson head_repo "${run_head_repository}" '{workflow_runs:[{id:400,workflow_id:300,name:$name,path:$path,event:"pull_request_target",status:"completed",conclusion:"failure",head_sha:$sha,head_branch:"feature",head_repository:$head_repo,pull_requests:$prs,created_at:"2026-09-01T07:00:00Z"}]}'
       ;;
-    repos/manaflow-ai/cmux-skills/actions/runs/400)
+    repos/${GH_REPO}/actions/runs/400)
       jq -nc --arg path "${run_path}" --arg name "${run_name}" --arg sha "${run_sha}" --argjson prs "${run_prs}" --argjson head_repo "${run_head_repository}" '{id:400,workflow_id:300,name:$name,path:$path,event:"pull_request_target",status:"completed",conclusion:"failure",head_sha:$sha,head_branch:"feature",head_repository:$head_repo,pull_requests:$prs,created_at:"2026-09-01T07:00:00Z"}'
       ;;
-    repos/manaflow-ai/cmux-skills/actions/runs/400/jobs)
+    repos/${GH_REPO}/actions/runs/400/jobs)
       jq -nc --arg sha "${run_sha}" '{jobs:[{id:500,run_id:400,name:"CLA Assistant v3",workflow_name:"CLA Assistant v3",workflow_id:300,status:"completed",conclusion:"failure",head_sha:$sha,head_repository:null,steps:[{name:"CLA generation v2.2-action-212a0f2dd659b24b48a30ba35966e06dc41736af",status:"completed",conclusion:"failure"}]}]}'
       ;;
-    repos/manaflow-ai/cmux-skills/actions/jobs/500)
+    repos/${GH_REPO}/actions/jobs/500)
       jq -nc --arg sha "${run_sha}" '{id:500,run_id:400,name:"CLA Assistant v3",workflow_name:"CLA Assistant v3",workflow_id:300,status:"completed",conclusion:"failure",head_sha:$sha,head_repository:null,steps:[{name:"CLA generation v2.2-action-212a0f2dd659b24b48a30ba35966e06dc41736af",status:"completed",conclusion:"failure"}]}'
       ;;
-    repos/manaflow-ai/cmux-skills/commits/*/check-runs)
-      jq -nc --arg details "${check_details}" --argjson app_id "${check_app_id}" '{total_count:1,check_runs:[{id:9000,name:"CLA Assistant v3",status:"completed",conclusion:"failure",head_sha:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",app:{id:$app_id,slug:"github-actions"},details_url:$details}]}'
+    repos/${GH_REPO}/commits/*/check-runs)
+      local requested_sha="${endpoint#repos/${GH_REPO}/commits/}"
+      requested_sha="${requested_sha%/check-runs}"
+      [[ "${requested_sha}" == "${check_lookup_sha}" ]] || {
+        echo "helper queried ${requested_sha}, expected ${check_lookup_sha}" >&2
+        return 1
+      }
+      jq -nc --arg details "${check_details}" --argjson app_id "${check_app_id}" --arg head_sha "${check_head_sha}" '{total_count:1,check_runs:[{id:9000,name:"CLA Assistant v3",status:"completed",conclusion:"failure",head_sha:$head_sha,app:{id:$app_id,slug:"github-actions"},details_url:$details}]}'
       ;;
     *) echo "unexpected endpoint ${endpoint}" >&2; return 1 ;;
   esac
@@ -118,7 +162,9 @@ run_case() {
 }
 
 run_case normal 0 1
+run_case base-empty 0 1
 run_case fallback-null 0 1
+run_case fallback-base-mismatch 1 0
 run_case wrong-app 1 0
 run_case wrong-details 1 0
 run_case suffix-path 0 0
