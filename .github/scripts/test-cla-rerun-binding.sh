@@ -74,6 +74,7 @@ gh() {
   local check_details="https://github.com/${GH_REPO}/actions/runs/400/job/500"
   local check_lookup_sha="${base_sha}"
   local check_head_sha="${base_sha}"
+  local repo_prefix="repos/${GH_REPO}"
   case "${FAKE_MODE:-normal}" in
     base-empty)
       run_prs='[]'
@@ -104,38 +105,39 @@ gh() {
     *) echo "unexpected fake mode ${FAKE_MODE:-}" >&2; return 1 ;;
   esac
   case "${endpoint}" in
-    repos/${GH_REPO}/issues/123)
+    "${repo_prefix}/issues/123")
       jq -nc --arg url "https://api.github.com/repos/${GH_REPO}/pulls/123" '{state:"open",pull_request:{url:$url}}'
       ;;
-    repos/${GH_REPO}/issues/comments/900)
+    "${repo_prefix}/issues/comments/900")
       jq -nc --arg issue_url "https://api.github.com/repos/${GH_REPO}/issues/123" --arg body "${COMMENT_BODY}" --argjson id "${COMMENT_AUTHOR_ID}" --arg login "${COMMENT_AUTHOR_LOGIN}" --arg type "${COMMENT_AUTHOR_TYPE}" --arg created "${COMMENT_CREATED_AT}" '{issue_url:$issue_url,body:$body,user:{id:$id,login:$login,type:$type},created_at:$created,updated_at:$created}'
       ;;
-    repos/${GH_REPO}/pulls/123)
+    "${repo_prefix}/pulls/123")
       jq -nc --arg repo "${GH_REPO}" --arg source_sha "${source_sha}" --arg base_sha "${base_sha}" --arg head_repo "contributor/${GH_REPO#*/}" '{number:123,state:"open",user:{id:300,login:"contributor"},base:{ref:"main",sha:$base_sha,repo:{id:100,full_name:$repo}},head:{ref:"feature",sha:$source_sha,repo:{id:200,full_name:$head_repo}}}'
       ;;
-    repos/${GH_REPO}/commits/*/pulls)
+    "${repo_prefix}/commits/"*/pulls)
       printf '[]\n'
       ;;
-    repos/${GH_REPO}/pulls)
+    "${repo_prefix}/pulls")
       jq -nc --arg repo "${GH_REPO}" --arg source_sha "${source_sha}" --arg base_sha "${base_sha}" --arg head_repo "contributor/${GH_REPO#*/}" '{number:123,state:"open",base:{ref:"main",sha:$base_sha,repo:{id:100,full_name:$repo}},head:{ref:"feature",sha:$source_sha,repo:{id:200,full_name:$head_repo}}}' | jq -sc .
       ;;
-    repos/${GH_REPO}/actions/workflows)
+    "${repo_prefix}/actions/workflows")
       jq -nc '{workflows:[{id:300,path:".github/workflows/cla.yml",state:"active"}]}'
       ;;
-    repos/${GH_REPO}/actions/workflows/300/runs)
+    "${repo_prefix}/actions/workflows/300/runs")
       jq -nc --arg path "${run_path}" --arg name "${run_name}" --arg sha "${run_sha}" --argjson prs "${run_prs}" --argjson head_repo "${run_head_repository}" '{workflow_runs:[{id:400,workflow_id:300,name:$name,path:$path,event:"pull_request_target",status:"completed",conclusion:"failure",head_sha:$sha,head_branch:"feature",head_repository:$head_repo,pull_requests:$prs,created_at:"2026-09-01T07:00:00Z"}]}'
       ;;
-    repos/${GH_REPO}/actions/runs/400)
+    "${repo_prefix}/actions/runs/400")
       jq -nc --arg path "${run_path}" --arg name "${run_name}" --arg sha "${run_sha}" --argjson prs "${run_prs}" --argjson head_repo "${run_head_repository}" '{id:400,workflow_id:300,name:$name,path:$path,event:"pull_request_target",status:"completed",conclusion:"failure",head_sha:$sha,head_branch:"feature",head_repository:$head_repo,pull_requests:$prs,created_at:"2026-09-01T07:00:00Z"}'
       ;;
-    repos/${GH_REPO}/actions/runs/400/jobs)
+    "${repo_prefix}/actions/runs/400/jobs")
       jq -nc --arg sha "${run_sha}" '{jobs:[{id:500,run_id:400,name:"CLA Assistant v3",workflow_name:"CLA Assistant v3",workflow_id:300,status:"completed",conclusion:"failure",head_sha:$sha,head_repository:null,steps:[{name:"CLA generation v2.2-action-212a0f2dd659b24b48a30ba35966e06dc41736af",status:"completed",conclusion:"failure"}]}]}'
       ;;
-    repos/${GH_REPO}/actions/jobs/500)
+    "${repo_prefix}/actions/jobs/500")
       jq -nc --arg sha "${run_sha}" '{id:500,run_id:400,name:"CLA Assistant v3",workflow_name:"CLA Assistant v3",workflow_id:300,status:"completed",conclusion:"failure",head_sha:$sha,head_repository:null,steps:[{name:"CLA generation v2.2-action-212a0f2dd659b24b48a30ba35966e06dc41736af",status:"completed",conclusion:"failure"}]}'
       ;;
-    repos/${GH_REPO}/commits/*/check-runs)
-      local requested_sha="${endpoint#repos/${GH_REPO}/commits/}"
+    "${repo_prefix}/commits/"*/check-runs)
+      local commit_prefix="${repo_prefix}/commits/"
+      local requested_sha="${endpoint#"${commit_prefix}"}"
       requested_sha="${requested_sha%/check-runs}"
       [[ "${requested_sha}" == "${check_lookup_sha}" ]] || {
         echo "helper queried ${requested_sha}, expected ${check_lookup_sha}" >&2
