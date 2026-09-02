@@ -3,7 +3,6 @@ set -euo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 WORKFLOW="${ROOT_DIR}/.github/workflows/cla.yml"
-LEDGER="${ROOT_DIR}/signatures/version2/cla.json"
 CODEOWNERS="${ROOT_DIR}/.github/CODEOWNERS"
 FIXTURE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/fixtures/cla-allowlist-aziz.json"
 ACTION_SHA='212a0f2dd659b24b48a30ba35966e06dc41736af'
@@ -11,11 +10,15 @@ MUTATION_GROUP="cla-mutation-\${{ github.repository }}-\${{ github.event.pull_re
 
 command -v jq >/dev/null
 command -v ruby >/dev/null
-[[ -f "${WORKFLOW}" && -f "${LEDGER}" && -f "${FIXTURE}" && -f "${CODEOWNERS}" ]]
+[[ -f "${WORKFLOW}" && -f "${FIXTURE}" && -f "${CODEOWNERS}" ]]
+# The action reads and writes the protected cla-signatures branch. A second
+# ledger on the default branch would be a writable, unauthoritative copy.
+[[ ! -e "${ROOT_DIR}/signatures/version2/cla.json" ]]
 
 refs="$(grep -oE "manaflow-ai/cla-github-action@[0-9a-f]{40}" "${WORKFLOW}" | sort -u)"
 [[ "${refs}" == "manaflow-ai/cla-github-action@${ACTION_SHA}" ]]
 [[ "$(sed -n '1p' "${WORKFLOW}")" == 'name: "CLA Assistant v3"' ]]
+[[ "$(grep -Ec '^[[:space:]]+branch: "cla-signatures"$' "${WORKFLOW}")" == 3 ]]
 
 # Parse job permissions and mutation lanes as data, so a formatting change
 # cannot hide a missing write permission or split the per-PR queue.
@@ -48,15 +51,6 @@ abort "rerun permissions are too broad or incomplete" unless rerun_permissions =
   "issues" => "read", "pull-requests" => "read"
 }
 RUBY
-
-jq -e '
-  type == "object" and
-  (.signedContributors | type == "array") and
-  all(.signedContributors[]?;
-    (.name | type == "string" and length > 0) and
-    (.id | type == "number" and floor == . and . > 0)
-  )
-' "${LEDGER}" >/dev/null
 
 for path in '.github/workflows/cla.yml' '.github/scripts/' 'signatures/' 'CLA.md'; do
   grep -Eq "^${path//\//\\/}[[:space:]]+@austinywang[[:space:]]+@azooz2003-bit$" "${CODEOWNERS}"
