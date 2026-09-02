@@ -18,16 +18,16 @@ export COMMENT_AUTHOR_LOGIN=contributor
 export COMMENT_AUTHOR_TYPE=User
 export COMMENT_AUTHOR_ASSOCIATION=NONE
 export WORKFLOW_PATH=.github/workflows/cla.yml
-export WORKFLOW_SHA="$(git -C "${repo_root}" rev-parse HEAD)"
+workflow_sha="$(git -C "${repo_root}" rev-parse HEAD)"
+export WORKFLOW_SHA="${workflow_sha}"
 export CLA_GENERATION=v2.2-action-212a0f2dd659b24b48a30ba35966e06dc41736af
 export TARGET_EVENT=pull_request_target
 export TARGET_BASE_REF=main
 export SIGNATURE_RECORDED=false
 
 gh() {
-  local endpoint="" page=1 arg
+  local endpoint="" arg
   for arg in "$@"; do
-    [[ "${arg}" == page=* ]] && page="${arg#page=}"
     [[ "${arg}" == repos/* ]] && endpoint="${arg}"
   done
   [[ -n "${endpoint}" ]] || { echo "missing endpoint" >&2; return 1; }
@@ -99,8 +99,8 @@ run_case() {
   status=$?
   set -e
   posts="$(wc -l <"${work}/posts" | tr -d ' ')"
-  [[ "${status}" == "${expected_status}" ]] || { echo "FAIL ${mode}: status ${status}\n${output}" >&2; exit 1; }
-  [[ "${posts}" == "${expected_posts}" ]] || { echo "FAIL ${mode}: posts ${posts}\n${output}" >&2; exit 1; }
+  [[ "${status}" == "${expected_status}" ]] || { printf 'FAIL %s: status %s\n%s\n' "${mode}" "${status}" "${output}" >&2; exit 1; }
+  [[ "${posts}" == "${expected_posts}" ]] || { printf 'FAIL %s: posts %s\n%s\n' "${mode}" "${posts}" "${output}" >&2; exit 1; }
   printf 'PASS %s\n' "${mode}"
 }
 
@@ -109,4 +109,3 @@ run_case fallback-null 0 1
 run_case wrong-app 1 0
 run_case wrong-details 1 0
 run_case suffix-path 0 0
-
