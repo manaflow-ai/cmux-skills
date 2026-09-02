@@ -25,6 +25,19 @@ export TARGET_EVENT=pull_request_target
 export TARGET_BASE_REF=main
 export SIGNATURE_RECORDED=false
 
+assert_lock_permissions() {
+  ruby - "${repo_root}/.github/workflows/cla.yml" <<'RUBY'
+require "yaml"
+
+workflow = YAML.safe_load(File.read(ARGV.fetch(0)), aliases: true)
+permissions = workflow.fetch("jobs").fetch("LockMergedPullRequest").fetch("permissions")
+expected = {"contents" => "read", "issues" => "write", "pull-requests" => "write"}
+abort "unexpected LockMergedPullRequest permissions: #{permissions.inspect}" unless permissions == expected
+RUBY
+}
+
+assert_lock_permissions
+
 gh() {
   local endpoint="" arg
   for arg in "$@"; do
