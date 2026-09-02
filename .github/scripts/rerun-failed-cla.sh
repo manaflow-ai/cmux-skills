@@ -577,7 +577,6 @@ if ! candidate_list_json="$(jq -c \
         | if $prs == null then false
           elif ($prs | length > 100) then false
           elif ($prs | length) == 0 then
-            .head_sha == $base_sha and
             .head_branch == $head_ref and
             (.head_repository | type) == "object" and
             .head_repository.full_name == $head_repo and
@@ -1049,7 +1048,6 @@ validate_exact_run_payload() {
            else null end) as $prs
         | if $prs == null then false
           elif ($prs | length) == 0 then
-            .head_sha == $base_sha and
             .head_branch == $head_ref and
             (.head_repository | type) == "object" and
             .head_repository.full_name == $head_repo and

@@ -100,6 +100,15 @@ gh() {
       check_lookup_sha="${source_sha}"
       check_head_sha="${source_sha}"
       ;;
+    fallback-source)
+      # GitHub can omit pull_requests while exposing a non-base execution
+      # SHA. The helper must bind the failed check to the immutable source
+      # head after validating the complete repository and live-PR identity.
+      run_prs='[]'
+      run_sha="${mismatch_sha}"
+      check_lookup_sha="${source_sha}"
+      check_head_sha="${source_sha}"
+      ;;
     fallback-base-mismatch)
       run_prs='[]'
       run_sha="${mismatch_sha}"
@@ -196,7 +205,7 @@ gh() {
       [[ "${compatibility_only}" == true ]] && assistant_conclusion='success'
       local job_run_id=400
       [[ "${multiple_runs}" == true ]] && job_run_id=401
-      jq -nc --arg sha "${base_sha}" --argjson run_id "${job_run_id}" --arg generation "${assistant_generation}" --arg conclusion "${assistant_conclusion}" '{id:500,run_id:$run_id,name:"CLA Assistant v3",workflow_name:"CLA Assistant v3",workflow_id:300,status:"completed",conclusion:$conclusion,head_sha:$sha,head_repository:null,steps:[{name:$generation,status:"completed",conclusion:$conclusion}]}'
+      jq -nc --arg sha "${run_sha}" --argjson run_id "${job_run_id}" --arg generation "${assistant_generation}" --arg conclusion "${assistant_conclusion}" '{id:500,run_id:$run_id,name:"CLA Assistant v3",workflow_name:"CLA Assistant v3",workflow_id:300,status:"completed",conclusion:$conclusion,head_sha:$sha,head_repository:null,steps:[{name:$generation,status:"completed",conclusion:$conclusion}]}'
       ;;
     "${repo_prefix}/actions/jobs/600")
       jq -nc --arg sha "${newer_run_sha}" --arg generation "${assistant_generation}" '{id:600,run_id:401,name:"CLA Assistant v3",workflow_name:"CLA Assistant v3",workflow_id:300,status:"completed",conclusion:"failure",head_sha:$sha,head_repository:null,steps:[{name:$generation,status:"completed",conclusion:"failure"}]}'
@@ -246,6 +255,7 @@ run_case() {
 
 run_case normal 0 1 "repos/${GH_REPO}/actions/jobs/500/rerun"
 run_case base-empty 0 1 "repos/${GH_REPO}/actions/jobs/500/rerun"
+run_case fallback-source 0 1 "repos/${GH_REPO}/actions/jobs/500/rerun"
 run_case newer-fallback 0 1 "repos/${GH_REPO}/actions/jobs/600/rerun"
 run_case populated-base-mismatch 1 0
 run_case populated-stale-execution 0 0
