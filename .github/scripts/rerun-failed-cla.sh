@@ -782,12 +782,21 @@ run_head_branch="$(jq -r '.head_branch // empty' <<<"${candidate_json}")"
 [[ -n "${run_head_branch}" && "${run_head_branch}" != *$'\n'* && "${run_head_branch}" != *$'\r'* ]] || fail "The selected CLA run head branch is invalid"
 
 # A run with a populated pull_requests array carries a source-PR association,
-# but that association is still only discovery data. Every selected run must
-# also have one exact Actions check on the live source head whose details URL
-# names the selected run and job. This prevents a checks:write producer from
-# spoofing the required context with a different workflow or execution SHA.
+# but that association is still only discovery data. For pull_request_target,
+# GitHub records the Actions check on the workflow execution SHA (normally the
+# live PR base SHA), not on the untrusted source head. Empty associations need
+# one extra branch: when GitHub omits or cannot prove the source repository and
+# base execution SHA, require a failed check on the exact source head instead.
+# The selected check always names the exact run and job in its details URL.
 
-fetch_check_runs_for_head() {
+# These values are set by validate_run_source_binding before each check lookup.
+# Keeping the lookup SHA separate from the PR source SHA avoids silently using
+# the wrong commit when GitHub returns pull_request_target metadata.
+CHECK_LOOKUP_SHA=""
+CHECK_EXPECTED_SHA=""
+CHECK_BINDING_MODE=""
+
+fetch_check_runs_for_sha() {
   local commit_sha="$1"
   local response page_count page2 page2_count page=1
   response="$(gh_api_bounded \
@@ -829,11 +838,13 @@ assert_failed_check_binding() {
   local checks="$1"
   local expected_run_id="$2"
   local expected_job_id="$3"
+  local expected_check_sha="$4"
   local details_url="https://github.com/${GH_REPO}/actions/runs/${expected_run_id}/job/${expected_job_id}"
   local matching_count
+  [[ "${expected_check_sha}" =~ ^[0-9a-f]{40}$ ]] || return 1
   matching_count="$(jq -r \
     --arg job "${CLA_ASSISTANT_JOB}" \
-    --arg sha "${head_sha}" \
+    --arg sha "${expected_check_sha}" \
     --arg url "${details_url}" \
     --argjson app_id "${CLA_ACTION_APP_ID}" '
       [ .check_runs[]?
@@ -861,18 +872,29 @@ assert_failed_check_binding() {
 validate_failed_check_binding() {
   local expected_run_id="$1"
   local expected_job_id="$2"
+  local check_sha="${CHECK_LOOKUP_SHA}"
+  local expected_check_sha="${CHECK_EXPECTED_SHA}"
   local checks
-  checks="$(fetch_check_runs_for_head "${head_sha}")" ||
-    fail "Could not query checks for the exact pull request head"
-  assert_failed_check_binding "${checks}" "${expected_run_id}" "${expected_job_id}" ||
-    fail "No failed CLA check is bound to the exact pull request head and selected job"
+  [[ "${check_sha}" =~ ^[0-9a-f]{40}$ && "${expected_check_sha}" =~ ^[0-9a-f]{40}$ ]] ||
+    fail "The selected CLA run has no valid check binding context"
+  checks="$(fetch_check_runs_for_sha "${check_sha}")" ||
+    fail "Could not query checks for the selected CLA execution"
+  assert_failed_check_binding "${checks}" "${expected_run_id}" "${expected_job_id}" "${expected_check_sha}" ||
+    if [[ "${CHECK_BINDING_MODE}" == source-fallback ]]; then
+      fail "No failed CLA check is bound to the exact pull request source head and selected job"
+    else
+      fail "No failed CLA check is bound to the workflow execution SHA and selected job"
+    fi
 }
 
 validate_run_source_binding() {
   local run_payload="$1"
   local execution_sha pull_requests_type pull_request_count head_repository_type
- execution_sha="$(jq -r '.head_sha // empty' <<<"${run_payload}")"
+  execution_sha="$(jq -r '.head_sha // empty' <<<"${run_payload}")"
   [[ "${execution_sha}" =~ ^[0-9a-f]{40}$ ]] || fail "The workflow run execution SHA is invalid"
+  CHECK_LOOKUP_SHA="${execution_sha}"
+  CHECK_EXPECTED_SHA="${execution_sha}"
+  CHECK_BINDING_MODE=execution
   pull_requests_type="$(jq -r 'if .pull_requests == null then "null" else (.pull_requests | type) end' <<<"${run_payload}")"
   case "${pull_requests_type}" in
     null) pull_request_count=0 ;;
@@ -881,11 +903,11 @@ validate_run_source_binding() {
   esac
   [[ "${pull_request_count}" =~ ^[0-9]+$ ]] || fail "The workflow run pull request association count is invalid"
   if (( pull_request_count == 0 )); then
-    # GitHub may omit pull_requests on a pull_request_target run. The run's
-    # source metadata is optional on fork events, so require a fresh live-PR
-    # association and one exact Actions check on the source head for every
-    # empty association. This also covers base-branch execution SHAs without
-    # trusting a branch name or a reusable ref on its own.
+    # GitHub may omit pull_requests on a pull_request_target run. A complete
+    # source repository plus the live PR base SHA binds the run directly. If
+    # either field is unavailable or the execution SHA differs, use the
+    # independent source-head check fallback below. A branch name alone never
+    # authorizes the rerun.
     head_repository_type="$(jq -r 'if .head_repository == null then "null" else (.head_repository | type) end' <<<"${run_payload}")"
     case "${head_repository_type}" in
       null) ;;
@@ -900,7 +922,19 @@ validate_run_source_binding() {
         ;;
       *) fail "The workflow run source repository metadata is malformed" ;;
     esac
-   validate_live_open_head_association
+    validate_live_open_head_association
+    if [[ "${head_repository_type}" == object && "${execution_sha}" == "${base_sha}" ]]; then
+      CHECK_LOOKUP_SHA="${execution_sha}"
+      CHECK_EXPECTED_SHA="${execution_sha}"
+      CHECK_BINDING_MODE=execution
+    else
+      # Fork runs can omit head_repository, and some pull_request_target API
+      # responses expose a non-base execution SHA. In either case, bind the
+      # failed check to the immutable live source head and its exact job URL.
+      CHECK_LOOKUP_SHA="${head_sha}"
+      CHECK_EXPECTED_SHA="${head_sha}"
+      CHECK_BINDING_MODE=source-fallback
+    fi
   fi
 }
 
