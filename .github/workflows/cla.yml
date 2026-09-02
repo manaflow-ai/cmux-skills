@@ -53,7 +53,7 @@ jobs:
     runs-on: ubuntu-24.04 # github-hosted-required: CLA policy jobs
     timeout-minutes: 10
     concurrency:
-      group: cla-admission-${{ github.repository }}-${{ github.workflow }}-${{ github.run_id }}-${{ github.run_attempt }}
+      group: cla-admission-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number }}
       cancel-in-progress: false
     permissions:
       contents: read
@@ -204,7 +204,7 @@ jobs:
     runs-on: ubuntu-24.04 # github-hosted-required: CLA policy jobs
     timeout-minutes: 15
     concurrency:
-      group: cla-signatures-${{ github.repository }}-${{ github.workflow }}-${{ github.run_id }}-${{ github.run_attempt }}
+      group: cla-mutation-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number }}
       cancel-in-progress: false
     permissions:
       contents: write
@@ -430,7 +430,7 @@ jobs:
     runs-on: ubuntu-24.04 # github-hosted-required: CLA policy jobs
     timeout-minutes: 15
     concurrency:
-      group: cla-rerun-${{ github.repository }}-${{ github.workflow }}-${{ github.run_id }}-${{ github.run_attempt }}
+      group: cla-mutation-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number }}
       cancel-in-progress: false
     permissions:
       actions: write
@@ -496,7 +496,7 @@ jobs:
     runs-on: ubuntu-24.04 # github-hosted-required: CLA policy jobs
     timeout-minutes: 10
     concurrency:
-      group: cla-lock-${{ github.repository }}-${{ github.event.pull_request.number }}
+      group: cla-mutation-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number }}
       cancel-in-progress: false
     permissions:
       contents: read
