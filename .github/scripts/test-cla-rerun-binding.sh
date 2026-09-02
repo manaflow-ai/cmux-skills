@@ -88,6 +88,9 @@ gh() {
     populated-base-mismatch)
       run_prs="$(jq -c --arg mismatch "${mismatch_sha}" 'map(.base.sha = $mismatch)' <<<"${run_prs}")"
       ;;
+    populated-stale-execution)
+      run_sha="${mismatch_sha}"
+      ;;
     fallback-null)
       run_prs='[]'
       run_head_repository=null
@@ -236,6 +239,7 @@ run_case normal 0 1 "repos/${GH_REPO}/actions/jobs/500/rerun"
 run_case base-empty 0 1 "repos/${GH_REPO}/actions/jobs/500/rerun"
 run_case newer-fallback 0 1 "repos/${GH_REPO}/actions/jobs/600/rerun"
 run_case populated-base-mismatch 1 0
+run_case populated-stale-execution 0 0
 run_case fallback-null 1 0
 run_case fallback-base-mismatch 1 0
 run_case stale-author-association 1 0

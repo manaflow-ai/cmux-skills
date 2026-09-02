@@ -583,7 +583,7 @@ if ! candidate_list_json="$(jq -c \
             .head_repository.full_name == $head_repo and
             (.head_repository.id | type == "number") and
             .head_repository.id == $head_repo_id
-          else any($prs[]?;
+          else (.head_sha == $base_sha) and any($prs[]?;
             (.number | type == "number") and
             (.number | tostring) == $pr and
             .base.ref == $base and
@@ -795,7 +795,7 @@ if [[ "${candidate_count}" == "0" ]]; then
            .head_repository.full_name == $head_repo and
            (.head_repository.id | type == "number") and
            .head_repository.id == $head_repo_id
-         else any($prs[]?;
+         else (.head_sha == $base_sha) and any($prs[]?;
            (.number | type == "number") and
            (.number | tostring) == $pr and
            .base.ref == $base and
@@ -978,6 +978,12 @@ validate_run_source_binding() {
     *) fail "The workflow run pull request association is malformed" ;;
   esac
   [[ "${pull_request_count}" =~ ^[0-9]+$ ]] || fail "The workflow run pull request association count is invalid"
+  if (( pull_request_count > 0 )); then
+    # A populated pull_requests association does not prove which revision
+    # executed pull_request_target. Require the live base SHA before replaying
+    # any write-capable job from that run.
+    [[ "${execution_sha}" == "${base_sha}" ]] || fail "The populated CLA run executed at an outdated workflow revision"
+  fi
   if (( pull_request_count == 0 )); then
     # GitHub may omit pull_requests on a pull_request_target run. A complete
     # source repository plus the live PR base SHA binds the run directly. A
@@ -1049,7 +1055,7 @@ validate_exact_run_payload() {
             .head_repository.full_name == $head_repo and
             (.head_repository.id | type == "number") and
             .head_repository.id == $head_repo_id
-          else any($prs[]?;
+          else (.head_sha == $base_sha) and any($prs[]?;
             (.number | type == "number") and
             (.number | tostring) == $pr and
             .base.ref == $base and
