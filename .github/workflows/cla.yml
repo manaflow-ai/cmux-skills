@@ -154,6 +154,8 @@ jobs:
           required-base-ref: "main"
           custom-pr-sign-comment: "I have read the CLA Document v2.2 and I hereby sign the CLA"
           require-opener-as-author: "true"
+          # These IDs are exemptions for the authenticated PR-opener authorship
+          # guard only. They do not restrict which contributors may sign.
           allowlist-ids: "38676809,67667005"
 
   # This is the only job with ledger and comment write permissions. It has no
@@ -242,6 +244,9 @@ jobs:
           branch: "cla-signatures"
           required-base-ref: "main"
           custom-pr-sign-comment: "I have read the CLA Document v2.2 and I hereby sign the CLA"
+          # The maintained action accepts every authenticated contributor. This
+          # numeric list only exempts Austin/Aziz from the opener-authorship
+          # mismatch guard, and never acts as a signer allowlist.
           allowlist-ids: "38676809,67667005"
           require-opener-as-author: "true"
           lock-pullrequest-aftermerge: "false"
@@ -531,6 +536,8 @@ jobs:
           branch: "cla-signatures"
           required-base-ref: "main"
           custom-pr-sign-comment: "I have read the CLA Document v2.2 and I hereby sign the CLA"
+          # Keep the same opener-authorship exemptions as the signer path. The
+          # action still accepts every authenticated contributor's CLA record.
           allowlist-ids: "38676809,67667005"
           require-opener-as-author: "true"
           lock-pullrequest-aftermerge: "true"
