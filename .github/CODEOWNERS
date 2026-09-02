@@ -1,4 +1,5 @@
-# CLA policy changes require review from both trusted maintainers.
+# CLA policy changes require review from a trusted maintainer. The branch
+# ruleset must require two approvals because CODEOWNERS entries are OR-based.
 .github/CODEOWNERS @austinywang @azooz2003-bit
 .github/workflows/cla.yml @austinywang @azooz2003-bit
 .github/scripts/ @austinywang @azooz2003-bit
