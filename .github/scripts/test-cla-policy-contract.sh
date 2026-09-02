@@ -28,6 +28,7 @@ jobs = workflow.fetch("jobs")
 writer = jobs.fetch("CLALedgerWriter")
 rerun = jobs.fetch("RerunFailedCLA")
 lock = jobs.fetch("LockMergedPullRequest")
+abort "required check does not use the stable v3 name" unless jobs.fetch("CLAAssistant").fetch("name") == "CLA Assistant v3"
 groups = [writer, rerun, lock].map { |job| job.fetch("concurrency").fetch("group") }
 abort "mutation jobs do not share one per-PR concurrency group" unless groups.all? { |group| group == expected_group }
 abort "mutation group contains a run-specific key" if groups.any? { |group| group.include?("run_id") || group.include?("run_attempt") }
@@ -59,8 +60,9 @@ jq -e '
 # The canary models the maintained action's opener-only numeric allowlist.
 # It proves Aziz's authenticated opener ID is accepted while an unknown ID is
 # rejected; it never signs a CLA or writes repository state.
-allowlist="$(grep -m1 -E 'allowlist-ids:' "${WORKFLOW}" | grep -oE '[0-9]{1,20}(,[0-9]{1,20})+')"
-[[ "${allowlist}" == '38676809,67667005' ]]
+allowlist_values="$(grep -E 'allowlist-ids:' "${WORKFLOW}" | grep -oE '[0-9]{1,20}(,[0-9]{1,20})+' | sort -u)"
+[[ "${allowlist_values}" == '38676809,67667005' ]]
+allowlist="${allowlist_values}"
 is_allowlisted_opener() {
   case ",${allowlist}," in
     *,"$1",*) return 0 ;;
