@@ -29,11 +29,11 @@ grep -Fq "EVENT_HEAD_SHA: \${{ github.event.pull_request.head.sha || '' }}" "${W
   echo "CLA lifecycle result must read pull_request.head.sha" >&2
   exit 1
 }
-if grep -Fq 'RUN_HEAD_SHA: ${{ github.sha' "${WORKFLOW}"; then
+if grep -Fq "RUN_HEAD_SHA: \${{ github.sha" "${WORKFLOW}"; then
   echo "CLA workflow must not bind a lifecycle run to github.sha" >&2
   exit 1
 fi
-if grep -Fq 'expected-head-sha: "${{ github.sha' "${WORKFLOW}"; then
+if grep -Fq "expected-head-sha: \"\${{ github.sha" "${WORKFLOW}"; then
   echo "CLA writer must not use github.sha as the expected PR head" >&2
   exit 1
 fi
