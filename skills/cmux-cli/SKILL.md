@@ -138,6 +138,9 @@ cmux open https://example.com --workspace "${CMUX_WORKSPACE_ID:-}" --focus false
 cmux new-pane --workspace "${CMUX_WORKSPACE_ID:-}" --type terminal --direction right --focus false
 cmux new-surface --workspace "${CMUX_WORKSPACE_ID:-}" --pane pane:2 --type terminal --focus false
 
+# Start the new terminal's first command at creation (terminal-only) instead of a later send.
+cmux new-pane --workspace "${CMUX_WORKSPACE_ID:-}" --type terminal --direction right --focus false --command "npm run dev"
+
 # Read and write the caller terminal.
 cmux read-screen --surface "${CMUX_SURFACE_ID:-}" --scrollback --lines 200
 cmux send --surface "${CMUX_SURFACE_ID:-}" "echo ok\n"
@@ -194,8 +197,11 @@ Prefer additive, scoped commands:
 ```bash
 cmux new-pane --workspace "${CMUX_WORKSPACE_ID:-}" --type terminal --direction right --focus false
 cmux new-surface --workspace "${CMUX_WORKSPACE_ID:-}" --pane pane:2 --type terminal --focus false
+cmux new-surface --workspace "${CMUX_WORKSPACE_ID:-}" --pane pane:2 --type terminal --focus false --command "npm test"
 cmux send --workspace "${CMUX_WORKSPACE_ID:-}" --surface surface:7 "npm test\n"
 ```
+
+When the first command for a new terminal is already known, pass `--command <text>` on `new-workspace`, `new-split`, `new-pane`, or `new-surface` instead of following up with `send`. cmux starts the normal interactive shell and delivers the text plus one Enter at spawn, so the command runs immediately and the shell stays alive after it exits. The text is passed literally (quoting, `&&`, pipes, and `$VARS` are interpreted by the new shell). The flag is terminal-only (`--type browser|simulator|agent-session` rejects it), blank text is ignored, and `new-workspace --layout` ignores it because layout surfaces define their own commands. Over the socket the same behavior is the raw `initial_input` param on `workspace.create`, `surface.split`, `pane.create`, and `surface.create`. Confirm the installed build supports it with `cmux new-pane --help`; older builds reject the flag, so fall back to `send` plus `send-key enter` there.
 
 When creating helper output for a task, reuse one right-side helper pane in the caller workspace. Use `list-panes` and `list-pane-surfaces` first, then create a new pane only when no suitable helper pane exists.
 

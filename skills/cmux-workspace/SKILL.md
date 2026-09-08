@@ -41,9 +41,10 @@ Build layout additively, in one shot. Prefer commands that create a new pane alr
 # pane and content in one call, no follow-up needed
 cmux new-pane --workspace "${CMUX_WORKSPACE_ID}" --type browser --direction right --url "http://127.0.0.1:8765"
 cmux new-pane --workspace "${CMUX_WORKSPACE_ID}" --type terminal --direction down
+cmux new-pane --workspace "${CMUX_WORKSPACE_ID}" --type terminal --direction down --command "npm run dev"
 ```
 
-Avoid create-then-move-then-focus chains. If a layout command rejects a valid `surface:` or `pane:` ref, do not work around it by focusing. Report the bug to the user and stop.
+When the first command for a new terminal is known, pass `--command <text>` so it starts at spawn instead of a later `send`; the flag is terminal-only and older builds without it reject the flag. Avoid create-then-move-then-focus chains. If a layout command rejects a valid `surface:` or `pane:` ref, do not work around it by focusing. Report the bug to the user and stop.
 
 Pass `--focus false` whenever the verb supports it. `move-surface --focus false` preserves the user's current attention. Other commands may grow the same flag over time (https://github.com/manaflow-ai/cmux/issues/1418, https://github.com/manaflow-ai/cmux/issues/2820).
 
@@ -70,7 +71,7 @@ Use this policy:
   cmux new-pane --workspace "${CMUX_WORKSPACE_ID:-}" --type terminal --direction right --focus false
   ```
 - If there are multiple obvious stale helper panes from this same automation and the user asked to tidy or reuse, keep one right helper pane and clean up the duplicates. Do not close panes you cannot confidently identify as stale helper output.
-- Send commands to the new or reused helper surface by explicit surface ref. Do not focus it unless the user asks.
+- Send commands to the new or reused helper surface by explicit surface ref, or pass `--command <text>` at creation when the first command is already known. Do not focus it unless the user asks.
 
 This means repeated "open it" requests should normally create tabs inside the existing right helper pane, not more splits.
 
@@ -168,6 +169,7 @@ cmux close-surface --workspace "${CMUX_WORKSPACE_ID:-}" --surface surface:3
 # additive layout (safe, no focus side effects beyond the command's own defaults)
 cmux new-pane --workspace "${CMUX_WORKSPACE_ID:-}" --type terminal --direction right
 cmux new-surface --workspace "${CMUX_WORKSPACE_ID:-}" --type terminal
+cmux new-surface --workspace "${CMUX_WORKSPACE_ID:-}" --type terminal --command "npm test"
 
 # focus-changing (USER-AFFECTING, only on explicit ask, see Non-Disruptive Automation above)
 cmux select-workspace --workspace workspace:2
@@ -288,7 +290,7 @@ cmux ping
 - Pass `--focus false` on `move-surface` and any creation verb that supports it.
 - For auxiliary output, reuse the right-side helper pane; create one only if it does not exist.
 - Persist final videos, images, checked frames, and other user-facing artifacts under `/cmux-assets/<branch>/...` or the explicit fallback `cmux-assets/<branch>/...`, then open them in the right-side helper pane with `cmux open ... --no-focus` before handoff.
-- Build layout additively with `new-pane --type ... --url ...` rather than create-then-move-then-focus chains.
+- Build layout additively with `new-pane --type ... --url ...` or `--command ...` rather than create-then-move-then-focus chains.
 - If a CLI command rejects a valid surface or pane ref, report it to the user. Do not work around by focusing.
 - Do not close, focus, move, or send input to another workspace unless the user names that target.
 - Use short refs for chat and command examples. Use UUIDs only for logs, persistence, or debugging.

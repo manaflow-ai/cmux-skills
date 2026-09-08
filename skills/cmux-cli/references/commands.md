@@ -22,6 +22,7 @@ cmux close-window --window window:2
 cmux list-workspaces --window window:1 --json
 cmux current-workspace --json
 cmux new-workspace --name "debug auth" --cwd "$PWD" --focus false
+cmux new-workspace --name "dev server" --cwd "$PWD" --command "npm run dev" --focus false
 cmux rename-workspace --workspace workspace:2 "build logs"
 cmux close-workspace --workspace workspace:2
 cmux reorder-workspace --workspace workspace:3 --before workspace:1 --dry-run
@@ -35,6 +36,9 @@ cmux list-panes --workspace "${CMUX_WORKSPACE_ID:-}" --json
 cmux list-pane-surfaces --workspace "${CMUX_WORKSPACE_ID:-}" --json
 cmux new-pane --workspace "${CMUX_WORKSPACE_ID:-}" --type terminal --direction right --focus false
 cmux new-surface --workspace "${CMUX_WORKSPACE_ID:-}" --pane pane:2 --type terminal --focus false
+cmux new-split down --workspace "${CMUX_WORKSPACE_ID:-}" --surface "${CMUX_SURFACE_ID:-}" --command "npm run dev" --focus false
+cmux new-pane --workspace "${CMUX_WORKSPACE_ID:-}" --type terminal --direction right --focus false --command "tail -f logs/dev.log"
+cmux new-surface --workspace "${CMUX_WORKSPACE_ID:-}" --pane pane:2 --type terminal --focus false --working-directory "$PWD" --command "npm test"
 cmux move-surface --surface surface:4 --pane pane:2 --focus false
 cmux reorder-surface --surface surface:4 --before surface:2 --focus false
 cmux split-off --surface surface:4 right --focus false
@@ -47,6 +51,7 @@ cmux close-surface --surface surface:4
 cmux read-screen --surface "${CMUX_SURFACE_ID:-}" --scrollback --lines 200
 cmux send --surface "${CMUX_SURFACE_ID:-}" "echo ok\n"
 cmux send-key --surface "${CMUX_SURFACE_ID:-}" enter
+# For a brand-new terminal, prefer --command on the creation verb over send + send-key enter.
 cmux capture-pane --surface "${CMUX_SURFACE_ID:-}" --scrollback --lines 200
 cmux clear-history --surface "${CMUX_SURFACE_ID:-}"
 cmux respawn-pane --surface surface:4 --command "npm test"
